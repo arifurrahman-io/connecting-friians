@@ -1,75 +1,133 @@
-import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  increment,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 
+// Consistent path for global metadata (matching your Firestore screenshot)
+const STATS_DOC_ID = "global_metrics";
+const STATS_COLLECTION = "platform_metadata";
+
 /**
- * Fetches platform-wide statistics.
- * In a professional app, these are often cached in a 'metadata' doc
- * to avoid expensive counting queries on every load.
+ * Listens to Platform Statistics.
+ * Provides real-time updates for the Home Screen Bento grid.
  */
-export const getPlatformStats = async () => {
+export const subscribeToPlatformStats = (callback) => {
+  const docRef = doc(db, STATS_COLLECTION, STATS_DOC_ID);
+
+  return onSnapshot(
+    docRef,
+    async (snapshot) => {
+      if (!snapshot.exists()) {
+        console.warn("Stats document missing. Initializing global_metrics...");
+
+        const initialData = {
+          activeUsers: 0,
+          solvedCount: 0,
+          expertCount: 0,
+          collabCount: 0,
+          lastUpdated: serverTimestamp(),
+        };
+
+        try {
+          // Use setDoc with {merge: true} to avoid overwriting if it was created mid-flight
+          await setDoc(docRef, initialData, { merge: true });
+          callback(initialData);
+        } catch (err) {
+          console.error(
+            "Critical: Check Firebase Rules for platform_metadata.",
+            err,
+          );
+          callback({ error: "Permission Denied" });
+        }
+        return;
+      }
+
+      callback(snapshot.data());
+    },
+    (error) => {
+      console.error("Stats Subscription Error:", error);
+      callback({ error: error.message });
+    },
+  );
+};
+
+/**
+ * Listens to the activities collection for the live feed.
+ * Returns the 6 most recent events.
+ */
+export const subscribeToRecentActivity = (callback) => {
+  const activityRef = collection(db, "activities");
+  const q = query(activityRef, orderBy("createdAt", "desc"), limit(6));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const activities = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        // Ensure formatTimeAgo has a valid date even during sync
+        createdAt: d.data().createdAt?.toDate() || new Date(),
+      }));
+      callback(activities);
+    },
+    (error) => {
+      console.error("Activity Feed Error:", error);
+      callback([]);
+    },
+  );
+};
+
+/**
+ * Helper: Record a new community activity.
+ * This makes the "Live Updates" section move!
+ * @param {string} message - e.g., "John solved a React issue"
+ * @param {string} type - 'join' | 'solved' | 'post'
+ */
+export const recordActivity = async (message, type = "post") => {
   try {
-    // Recommendation: Point this to a single 'global_stats' document
-    const statsDoc = await getDocs(collection(db, "platform_metadata"));
-
-    if (!statsDoc.empty) {
-      return statsDoc.docs[0].data();
-    }
-
-    // Fallback/Initial values if metadata doesn't exist yet
-    return {
-      activeUsers: "0",
-      solvedCount: "0",
-      expertCount: "0",
-      collabCount: "0",
-    };
-  } catch (error) {
-    console.error("Error fetching stats:", error);
-    throw error;
+    await addDoc(collection(db, "activities"), {
+      message,
+      type,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to record activity:", err);
   }
 };
 
 /**
- * Fetches the most recent activities across the platform.
- * This looks at a global 'activities' collection.
+ * Helper: Atomic Increment for global stats.
+ * Call this when a user joins or a post is solved.
+ * @param {string} field - 'activeUsers' | 'solvedCount' | 'expertCount' | 'collabCount'
  */
-export const getRecentActivity = async (itemLimit = 5) => {
+export const updateGlobalMetric = async (field, value = 1) => {
+  const docRef = doc(db, STATS_COLLECTION, STATS_DOC_ID);
   try {
-    const activityRef = collection(db, "activities");
-    const q = query(
-      activityRef,
-      orderBy("createdAt", "desc"),
-      limit(itemLimit),
-    );
-
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-      // Ensure timeAgo is handled (can use date-fns or similar)
-      timeAgo: formatTimeAgo(doc.data().createdAt?.toDate()),
-    }));
-  } catch (error) {
-    console.error("Error fetching activity:", error);
-    return [];
+    await updateDoc(docRef, {
+      [field]: increment(value),
+      lastUpdated: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error(`Failed to increment ${field}:`, err);
   }
 };
 
 /**
- * Helper to turn timestamps into "2m ago" style strings
+ * Utility: Fetch stats once without a listener.
  */
-const formatTimeAgo = (date) => {
-  if (!date) return "Just now";
-  const seconds = Math.floor((new Date() - date) / 1000);
-
-  let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + "y ago";
-  interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + "mo ago";
-  interval = seconds / 86400;
-  if (interval > 1) return Math.floor(interval) + "d ago";
-  interval = seconds / 3600;
-  if (interval > 1) return Math.floor(interval) + "h ago";
-  interval = seconds / 60;
-  if (interval > 1) return Math.floor(interval) + "m ago";
-  return "Just now";
+export const getPlatformStatsOnce = async () => {
+  const docRef = doc(db, STATS_COLLECTION, STATS_DOC_ID);
+  const snap = await getDoc(docRef);
+  return snap.exists() ? snap.data() : null;
 };

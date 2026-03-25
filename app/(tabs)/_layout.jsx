@@ -1,14 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
-import { Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { useAuth } from "../../src/context/AuthContext";
 import { COLORS } from "../../src/theme/colors";
 
 export default function TabLayout() {
   const { user, loading } = useAuth();
+  const insets = useSafeAreaInsets();
 
-  if (loading) return null;
-  if (!user) return <Redirect href="/(public)/login" />;
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <Redirect href="/(public)/login" />;
+  }
 
   return (
     <Tabs
@@ -16,9 +28,23 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: "#94A3B8",
-        tabBarStyle: styles.tabBar,
         tabBarShowLabel: true,
+        tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabLabel,
+        tabBarStyle: {
+          // ATTACHED TO BOTTOM LOGIC
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: Platform.OS === "ios" ? 88 : 68, // Taller for iOS home indicator
+          backgroundColor: "#FFFFFF",
+          borderTopWidth: 1,
+          borderTopColor: "#F1F5F9",
+          elevation: 0, // Remove Android shadow for a flatter, modern look
+          paddingBottom: Platform.OS === "ios" ? insets.bottom + 40 : 70,
+          paddingTop: 12,
+        },
       }}
     >
       <Tabs.Screen
@@ -34,6 +60,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="feed"
         options={{
@@ -47,18 +74,20 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="create-post"
         options={{
-          title: "Post",
+          title: "",
+          tabBarLabel: () => null,
           tabBarIcon: () => (
             <View style={styles.centerAction}>
-              <Ionicons name="add" size={32} color="#fff" />
+              <Ionicons name="code" size={32} color="#fff" />
             </View>
           ),
-          tabBarLabel: () => null,
         }}
       />
+
       <Tabs.Screen
         name="directory"
         options={{
@@ -72,6 +101,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -85,52 +115,42 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Hide notifications from the bar */}
+
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 28 : 12,
-    left: 16,
-    right: 16,
-    height: 68,
-    borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.98)", // Solid high-quality white
-    borderTopWidth: 0,
-    elevation: 15,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 15,
-    paddingBottom: Platform.OS === "ios" ? 0 : 10,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
   },
   tabLabel: {
     fontSize: 10,
     fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginBottom: Platform.OS === "ios" ? 0 : 4,
+    letterSpacing: 0.5,
+    marginTop: 4,
+    paddingBottom: 0,
   },
   centerAction: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     backgroundColor: COLORS.primary,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: -32,
+    // Lifted slightly but remains within the bar context
+    marginTop: Platform.OS === "ios" ? -10 : -15,
     shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: "#F8FAFC",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 2,
+    borderColor: "#FFF",
   },
 });

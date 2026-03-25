@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,380 +12,467 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInRight,
+  Layout,
+} from "react-native-reanimated";
+
 import AppScreen from "../../src/components/AppScreen";
 import { useAuth } from "../../src/context/AuthContext";
-import { COLORS } from "../../src/theme/colors";
-// Assuming these services exist based on your project structure
+import { subscribeUnreadCount } from "../../src/services/notificationService";
 import {
-  getPlatformStats,
-  getRecentActivity,
+  subscribeToPlatformStats,
+  subscribeToRecentActivity,
 } from "../../src/services/platformService";
+
+import { COLORS } from "../../src/theme/colors";
+import { formatTimeAgo } from "../../src/utils/timeAgo";
 
 const { width } = Dimensions.get("window");
 
 export default function HomeScreen() {
-  const { profile } = useAuth();
-  const [stats, setStats] = useState([]);
+  const { profile, user } = useAuth();
+
+  const [stats, setStats] = useState([
+    {
+      label: "Active Users",
+      value: 0,
+      icon: "people",
+      color: "#6366F1",
+      target: "/directory",
+    },
+    {
+      label: "Solved",
+      value: 0,
+      icon: "checkmark-done-circle",
+      color: "#10B981",
+      target: "/feed",
+    },
+    {
+      label: "Experts",
+      value: 0,
+      icon: "ribbon",
+      color: "#F59E0B",
+      target: "/directory",
+    },
+    {
+      label: "Collabs",
+      value: 0,
+      icon: "flask",
+      color: "#EC4899",
+      target: "/feed",
+    },
+  ]);
+
   const [activities, setActivities] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const [statsData, activityData] = await Promise.all([
-        getPlatformStats(),
-        getRecentActivity(),
-      ]);
-
-      // Mapping colors/icons to dynamic data
-      const mappedStats = [
-        {
-          label: "Active Users",
-          value: statsData.activeUsers,
-          icon: "people-outline",
-          color: "#6366F1",
-        },
-        {
-          label: "Solved",
-          value: statsData.solvedCount,
-          icon: "checkmark-done-outline",
-          color: "#10B981",
-        },
-        {
-          label: "Experts",
-          value: statsData.expertCount,
-          icon: "ribbon-outline",
-          color: "#F59E0B",
-        },
-        {
-          label: "Collabs",
-          value: statsData.collabCount,
-          icon: "flask-outline",
-          color: "#EC4899",
-        },
-      ];
-
-      setStats(mappedStats);
-      setActivities(activityData);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 18) return "Good Afternoon";
+    return "Good Evening";
   }, []);
 
-  const onRefresh = () => {
+  useEffect(() => {
+    let unsubStats = () => {};
+    let unsubActivity = () => {};
+    let unsubNotifications = () => {};
+
+    unsubStats = subscribeToPlatformStats((data) => {
+      if (data) {
+        setStats([
+          {
+            label: "Active Users",
+            value: data.activeUsers || 0,
+            icon: "people",
+            color: "#6366F1",
+            target: "/directory",
+          },
+          {
+            label: "Solved",
+            value: data.solvedCount || 0,
+            icon: "checkmark-done-circle",
+            color: "#10B981",
+            target: "/feed",
+          },
+          {
+            label: "Experts",
+            value: data.expertCount || 0,
+            icon: "ribbon",
+            color: "#F59E0B",
+            target: "/directory",
+          },
+          {
+            label: "Collabs",
+            value: data.collabCount || 0,
+            icon: "flask",
+            color: "#EC4899",
+            target: "/feed",
+          },
+        ]);
+      }
+      setLoading(false);
+    });
+
+    unsubActivity = subscribeToRecentActivity((items) => {
+      // FIX: Only take the last 5 activities for the Live Feed
+      setActivities((items || []).slice(0, 5));
+    });
+
+    if (user?.uid) {
+      unsubNotifications = subscribeUnreadCount(user.uid, setUnreadCount);
+    }
+
+    return () => {
+      unsubStats();
+      unsubActivity();
+      unsubNotifications();
+    };
+  }, [user]);
+
+  const handleRefresh = async () => {
     setRefreshing(true);
-    fetchData();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => setRefreshing(false), 800);
+  };
+
+  const getActivityIcon = (type) => {
+    switch (type) {
+      case "join":
+        return { name: "person-add", color: "#6366F1" };
+      case "solved":
+        return { name: "checkmark-circle", color: "#10B981" };
+      case "post":
+        return { name: "help-buoy", color: "#F59E0B" };
+      default:
+        return { name: "flash", color: COLORS.primary };
+    }
   };
 
   return (
     <AppScreen backgroundColor="#F8FAFC">
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.container}
+        // FIX: Added large padding to prevent the Quick Action card from hiding under the Tab Bar
+        contentContainerStyle={[styles.container, { paddingBottom: 120 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={onRefresh}
+            onRefresh={handleRefresh}
             tintColor={COLORS.primary}
           />
         }
       >
-        {/* Modern Minimal Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Good Morning,</Text>
-            <Text style={styles.name}>
-              {profile?.fullName?.split(" ")[0] || "Friian"}
-            </Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.iconCircle}
-              onPress={() => router.push("/directory")}
-            >
-              <Ionicons name="search-outline" size={22} color="#475569" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.iconCircle}
-              onPress={() => router.push("/notifications")}
-            >
-              <Ionicons
-                name="notifications-outline"
-                size={22}
-                color="#475569"
-              />
-              <View style={styles.activeDot} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Platform Snapshot - Dynamic Bento Grid */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>PLATFORM SNAPSHOT</Text>
-          {loading && !refreshing ? (
-            <ActivityIndicator
-              color={COLORS.primary}
-              style={{ marginTop: 20 }}
-            />
-          ) : (
-            <View style={styles.statsGrid}>
-              {stats.map((item, index) => (
-                <View key={index} style={styles.statCard}>
-                  <View
-                    style={[
-                      styles.iconWrapper,
-                      { backgroundColor: item.color + "10" },
-                    ]}
-                  >
-                    <Ionicons name={item.icon} size={18} color={item.color} />
-                  </View>
-                  <View>
-                    <Text style={styles.statValue}>{item.value || "0"}</Text>
-                    <Text style={styles.statLabel}>{item.label}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* Premium CTA Card */}
-        <TouchableOpacity
-          style={styles.heroCard}
-          onPress={() => router.push("/feed")}
-          activeOpacity={0.92}
+        {/* HEADER */}
+        <Animated.View
+          entering={FadeInDown.duration(700)}
+          style={styles.header}
         >
-          <View style={styles.heroContent}>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>LIVE FEED</Text>
-            </View>
-            <Text style={styles.heroTitle}>Community{"\n"}Knowledge Hub</Text>
-            <Text style={styles.heroDesc}>
-              Collaborate with top-tier alumni to solve complex problems in
-              real-time.
+          <View>
+            <Text style={styles.greeting}>{greeting},</Text>
+            <Text style={styles.name}>
+              {profile?.fullName?.split(" ")[0] || "Friend"}
             </Text>
-            <View style={styles.heroFooter}>
-              <Text style={styles.heroBtnText}>Explore Feed</Text>
-              <Ionicons name="arrow-forward-circle" size={28} color="#fff" />
-            </View>
           </View>
-          <View style={styles.heroGraphic} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconCircle}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push("/notifications");
+            }}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#1E293B" />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
 
-        {/* Recent Activity - Dynamic List */}
+        {/* PLATFORM STATS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>RECENT UPDATES</Text>
-            <TouchableOpacity onPress={() => router.push("/notifications")}>
-              <Text style={styles.textBtn}>View History</Text>
+            <Text style={styles.sectionLabel}>PLATFORM SNAPSHOT</Text>
+            {loading && (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            )}
+          </View>
+          <View style={styles.statsGrid}>
+            {stats.map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                activeOpacity={0.7}
+                style={{ width: "48%" }}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  router.push(item.target);
+                }}
+              >
+                <Animated.View
+                  entering={FadeInRight.delay(index * 100)}
+                  style={styles.statCard}
+                >
+                  <View
+                    style={[
+                      styles.iconBox,
+                      { backgroundColor: item.color + "15" },
+                    ]}
+                  >
+                    <Ionicons name={item.icon} size={20} color={item.color} />
+                  </View>
+                  <View>
+                    <Text style={styles.statValue}>{item.value}</Text>
+                    <Text style={styles.statLabel}>{item.label}</Text>
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* LIVE ACTIVITY */}
+        <View style={styles.section}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.sectionLabel}>LIVE UPDATES</Text>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.selectionAsync();
+                router.push("/activity-log"); // Ensure this route exists
+              }}
+              style={styles.seeAllBtn}
+            >
+              <Text style={styles.seeAllText}>See All</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={COLORS.primary}
+              />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.activityList}>
+          <Animated.View
+            entering={FadeIn.delay(300)}
+            style={styles.activityList}
+          >
             {activities.length > 0 ? (
-              activities.map((act, index) => (
-                <ActivityItem
-                  key={act.id}
-                  icon={
-                    act.type === "guidance" ? "flash-outline" : "trophy-outline"
-                  }
-                  text={act.message}
-                  category={act.category}
-                  time={act.timeAgo}
-                  color={act.type === "guidance" ? "#6366F1" : "#10B981"}
-                  isLast={index === activities.length - 1}
-                />
-              ))
+              activities.map((act, index) => {
+                const icon = getActivityIcon(act.type);
+                return (
+                  <Animated.View
+                    key={act.id || index}
+                    layout={Layout.springify()}
+                    style={[
+                      styles.activityRow,
+                      index === activities.length - 1 && {
+                        borderBottomWidth: 0,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.activityIconCircle,
+                        { backgroundColor: icon.color + "10" },
+                      ]}
+                    >
+                      <Ionicons name={icon.name} size={14} color={icon.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activityText} numberOfLines={2}>
+                        {act.message}
+                      </Text>
+                      <Text style={styles.activityTime}>
+                        {formatTimeAgo(act.createdAt)}
+                      </Text>
+                    </View>
+                  </Animated.View>
+                );
+              })
             ) : (
-              <Text style={styles.emptyText}>No recent updates found.</Text>
+              <View style={styles.emptyContainer}>
+                <Ionicons name="pulse-outline" size={32} color="#CBD5E1" />
+                <Text style={styles.emptyText}>
+                  Waiting for new activity...
+                </Text>
+              </View>
             )}
-          </View>
+          </Animated.View>
         </View>
+
+        {/* QUICK ACTION */}
+        <Animated.View entering={FadeInDown.delay(500)}>
+          <TouchableOpacity
+            style={styles.footerAction}
+            activeOpacity={0.9}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/create-post");
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.footerActionText}>Stuck on a problem?</Text>
+              <Text style={styles.footerActionSubtext}>
+                Our alumni experts are ready to help you.
+              </Text>
+            </View>
+            <View style={styles.footerButton}>
+              <Text style={styles.footerButtonText}>Ask Experts</Text>
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
       </ScrollView>
     </AppScreen>
   );
 }
 
-function ActivityItem({ icon, text, category, time, color, isLast }) {
-  return (
-    <View style={[styles.activityRow, isLast && { borderBottomWidth: 0 }]}>
-      <View style={[styles.activityIcon, { backgroundColor: color + "10" }]}>
-        <Ionicons name={icon} size={20} color={color} />
-      </View>
-      <View style={styles.activityBody}>
-        <Text style={styles.activityTitle} numberOfLines={1}>
-          {text}
-        </Text>
-        <View style={styles.activityMeta}>
-          <Text style={styles.activityCategory}>{category}</Text>
-          <Text style={styles.dot}>•</Text>
-          <Text style={styles.activityTime}>{time}</Text>
-        </View>
-      </View>
-      <Ionicons name="chevron-forward" size={14} color="#CBD5E1" />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: 20, paddingBottom: 110 },
+  container: { padding: 20 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 20,
+    marginBottom: 30,
   },
   greeting: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#94A3B8",
-    fontWeight: "600",
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  name: { fontSize: 32, fontWeight: "800", color: "#0F172A", marginTop: -2 },
-  headerActions: { flexDirection: "row", gap: 10 },
+  name: { fontSize: 32, fontWeight: "900", color: "#0F172A", marginTop: -4 },
   iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#fff",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#F1F5F9",
+    elevation: 2,
   },
-  activeDot: {
+  badge: {
     position: "absolute",
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.primary,
+    top: 8,
+    right: 8,
+    backgroundColor: "#EF4444",
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: "#fff",
+    borderColor: "#FFF",
   },
-  section: { marginTop: 25 },
+  badgeText: { color: "#FFF", fontSize: 8, fontWeight: "900" },
+  section: { marginBottom: 30 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 15,
+  },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "800",
     color: "#94A3B8",
-    letterSpacing: 1.5,
-    marginBottom: 16,
+    letterSpacing: 1.2,
   },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  seeAllText: { fontSize: 13, fontWeight: "700", color: COLORS.primary },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
   statCard: {
-    flex: 1,
-    minWidth: (width - 60) / 2,
-    backgroundColor: "#fff",
+    backgroundColor: "#FFF",
     padding: 16,
     borderRadius: 24,
+    marginBottom: 15,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
-  iconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  statValue: { fontSize: 18, fontWeight: "800", color: "#1E293B" },
+  iconBox: { padding: 10, borderRadius: 16 },
+  statValue: { fontSize: 20, fontWeight: "900", color: "#1E293B" },
   statLabel: { fontSize: 12, color: "#64748B", fontWeight: "500" },
-  heroCard: {
-    backgroundColor: "#0F172A",
-    borderRadius: 32,
-    padding: 24,
-    marginTop: 30,
-    overflow: "hidden",
-    elevation: 10,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-  },
-  heroGraphic: {
-    position: "absolute",
-    right: -20,
-    top: -20,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: COLORS.primary,
-    opacity: 0.15,
-  },
-  heroBadge: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  heroBadgeText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  heroTitle: { fontSize: 28, fontWeight: "800", color: "#fff", lineHeight: 34 },
-  heroDesc: { fontSize: 15, color: "#94A3B8", marginTop: 12, lineHeight: 22 },
-  heroFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 25,
-    gap: 10,
-  },
-  heroBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  textBtn: { fontSize: 13, fontWeight: "700", color: COLORS.primary },
   activityList: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    paddingHorizontal: 16,
+    backgroundColor: "#FFF",
+    borderRadius: 28,
+    padding: 20,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   activityRow: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
+    alignItems: "flex-start",
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F8FAFC",
   },
-  activityIcon: {
-    width: 44,
-    height: 44,
+  activityIconCircle: {
+    width: 28,
+    height: 28,
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 14,
+    marginRight: 12,
+    marginTop: 2,
   },
-  activityBody: { flex: 1 },
-  activityTitle: { fontSize: 15, fontWeight: "700", color: "#1E293B" },
-  activityMeta: { flexDirection: "row", alignItems: "center", marginTop: 4 },
-  activityCategory: { fontSize: 12, color: COLORS.primary, fontWeight: "700" },
-  dot: { marginHorizontal: 6, color: "#CBD5E1" },
-  activityTime: { fontSize: 12, color: "#94A3B8" },
+  activityText: {
+    fontSize: 14,
+    color: "#334155",
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  activityTime: { fontSize: 11, color: "#94A3B8", marginTop: 4 },
+  emptyContainer: { alignItems: "center", padding: 20 },
   emptyText: {
-    padding: 20,
     textAlign: "center",
     color: "#94A3B8",
-    fontSize: 14,
+    fontSize: 13,
+    marginTop: 10,
   },
+  footerAction: {
+    backgroundColor: "#1E293B",
+    borderRadius: 24,
+    padding: 24,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    elevation: 6,
+  },
+  footerActionText: { color: "#FFF", fontWeight: "800", fontSize: 17 },
+  footerActionSubtext: { color: "#94A3B8", fontSize: 12, marginTop: 4 },
+  footerButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginLeft: 10,
+  },
+  footerButtonText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 });

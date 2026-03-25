@@ -18,6 +18,9 @@ import {
 import { db } from "../firebase/config";
 import { createNotification } from "./notificationService";
 
+// Consistent reference for the dynamic Bento grid stats
+const STATS_REF = doc(db, "platform_metadata", "global_metrics");
+
 /* ------------------------------------------------
    CREATE POST
 ------------------------------------------------ */
@@ -37,6 +40,7 @@ export async function createPost({
     throw new Error("Title and body are required.");
   }
 
+  // 1. Create the Post
   const postRef = await addDoc(collection(db, "posts"), {
     authorId,
     authorName,
@@ -52,11 +56,20 @@ export async function createPost({
     updatedAt: serverTimestamp(),
   });
 
-  /* ----------------------------------------------
-     HELP REQUEST NOTIFICATIONS
-     (fan-out for matched expertise)
-  ---------------------------------------------- */
+  // 2. DYNAMIC SYNC: Log Activity for the Global Feed
+  try {
+    await addDoc(collection(db, "activities"), {
+      type: "post",
+      category: primaryExpertiseName || "General",
+      message: `${authorName} started a new discussion: "${trimmedTitle.slice(0, 35)}..."`,
+      postId: postRef.id,
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.log("Activity log failed", e);
+  }
 
+  // 3. Expertise Fan-out Notifications
   try {
     const q = query(
       collection(db, "users"),
@@ -64,7 +77,6 @@ export async function createPost({
     );
 
     const snap = await getDocs(q);
-
     const notifications = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((user) => user.id !== authorId)
@@ -72,7 +84,7 @@ export async function createPost({
         createNotification({
           receiverId: user.id,
           senderId: authorId,
-          title: "New help request in your expertise",
+          title: "New challenge in your field",
           body: trimmedTitle,
           postId: postRef.id,
           type: "matched_expertise_post",
@@ -93,13 +105,11 @@ export async function createPost({
 
 export function subscribePosts(callback) {
   const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-
   return onSnapshot(q, (snapshot) => {
     const posts = snapshot.docs.map((d) => ({
       id: d.id,
       ...d.data(),
     }));
-
     callback(posts);
   });
 }
@@ -107,10 +117,7 @@ export function subscribePosts(callback) {
 export function subscribePost(postId, callback) {
   return onSnapshot(doc(db, "posts", postId), (snap) => {
     if (snap.exists()) {
-      callback({
-        id: snap.id,
-        ...snap.data(),
-      });
+      callback({ id: snap.id, ...snap.data() });
     }
   });
 }
@@ -127,24 +134,16 @@ export async function addComment({
   parentId = null,
 }) {
   const trimmedBody = body?.trim();
-
-  if (!trimmedBody) {
-    throw new Error("Comment cannot be empty.");
-  }
+  if (!trimmedBody) throw new Error("Comment cannot be empty.");
 
   const postRef = doc(db, "posts", postId);
   const postSnap = await getDoc(postRef);
 
-  if (!postSnap.exists()) {
-    throw new Error("Post not found.");
-  }
-
+  if (!postSnap.exists()) throw new Error("Post not found.");
   const post = postSnap.data();
+  if (post.solved) throw new Error("This discussion is closed.");
 
-  if (post.solved) {
-    throw new Error("This problem is already solved. Replies are closed.");
-  }
-
+  // 1. Add Comment
   const commentRef = await addDoc(collection(db, "comments"), {
     postId,
     authorId,
@@ -154,65 +153,38 @@ export async function addComment({
     createdAt: serverTimestamp(),
   });
 
-  /* update post stats */
+  // 2. DYNAMIC SYNC: Update Local Post and Global Collaboration Count
+  try {
+    await updateDoc(postRef, {
+      commentsCount: increment(1),
+      updatedAt: serverTimestamp(),
+    });
 
-  await updateDoc(postRef, {
-    commentsCount: increment(1),
-    updatedAt: serverTimestamp(),
-  });
-
-  /* ----------------------------------------------
-     NOTIFY POST OWNER
-  ---------------------------------------------- */
-
-  if (!parentId && post.authorId !== authorId) {
-    try {
-      await createNotification({
-        receiverId: post.authorId,
-        senderId: authorId,
-        title: "Someone commented on your post",
-        body: post.title,
-        postId,
-        type: "comment_on_post",
-      });
-    } catch (err) {
-      console.log("Post owner notification failed:", err);
-    }
+    // Update the "Collabs" box on the Home Screen
+    await updateDoc(STATS_REF, {
+      collabCount: increment(1),
+    });
+  } catch (err) {
+    console.warn("Global stats update failed:", err);
   }
 
-  /* ----------------------------------------------
-     NOTIFY COMMENT AUTHOR
-  ---------------------------------------------- */
-
-  if (parentId) {
-    try {
-      const parentRef = doc(db, "comments", parentId);
-      const parentSnap = await getDoc(parentRef);
-
-      if (parentSnap.exists()) {
-        const parent = parentSnap.data();
-
-        if (parent.authorId !== authorId) {
-          await createNotification({
-            receiverId: parent.authorId,
-            senderId: authorId,
-            title: "Someone replied to your comment",
-            body: trimmedBody.slice(0, 80),
-            postId,
-            type: "comment_reply",
-          });
-        }
-      }
-    } catch (err) {
-      console.log("Reply notification failed:", err);
-    }
+  // 3. Notifications logic
+  if (!parentId && post.authorId !== authorId) {
+    await createNotification({
+      receiverId: post.authorId,
+      senderId: authorId,
+      title: "New feedback on your request",
+      body: trimmedBody.slice(0, 50),
+      postId,
+      type: "comment_on_post",
+    });
   }
 
   return commentRef.id;
 }
 
 /* ------------------------------------------------
-   COMMENT SUBSCRIPTION
+   SUBSCRIPTIONS & UTILS
 ------------------------------------------------ */
 
 export function subscribeComments(postId, callback) {
@@ -221,81 +193,47 @@ export function subscribeComments(postId, callback) {
     where("postId", "==", postId),
     orderBy("createdAt", "asc"),
   );
-
   return onSnapshot(q, (snapshot) => {
-    const comments = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    callback(comments);
+    callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
 }
-
-/* ------------------------------------------------
-   COMMENT TREE BUILDER
------------------------------------------------- */
 
 export function buildCommentTree(comments) {
   const map = {};
   const roots = [];
-
   comments.forEach((c) => {
     map[c.id] = { ...c, replies: [] };
   });
-
   comments.forEach((c) => {
-    if (c.parentId && map[c.parentId]) {
-      map[c.parentId].replies.push(map[c.id]);
-    } else {
-      roots.push(map[c.id]);
-    }
+    if (c.parentId && map[c.parentId]) map[c.parentId].replies.push(map[c.id]);
+    else roots.push(map[c.id]);
   });
-
   return roots;
 }
 
 /* ------------------------------------------------
-   POST LIKES
+   LIKES
 ------------------------------------------------ */
 
 export async function toggleLikePost(postId, userId) {
   const likeId = `${postId}_${userId}`;
-
   const likeRef = doc(db, "postLikes", likeId);
   const postRef = doc(db, "posts", postId);
-
   const likeSnap = await getDoc(likeRef);
 
   if (likeSnap.exists()) {
     await deleteDoc(likeRef);
-
-    await updateDoc(postRef, {
-      likesCount: increment(-1),
-      updatedAt: serverTimestamp(),
-    });
-
+    await updateDoc(postRef, { likesCount: increment(-1) });
     return false;
   }
 
-  await setDoc(likeRef, {
-    postId,
-    userId,
-    createdAt: serverTimestamp(),
-  });
-
-  await updateDoc(postRef, {
-    likesCount: increment(1),
-    updatedAt: serverTimestamp(),
-  });
-
+  await setDoc(likeRef, { postId, userId, createdAt: serverTimestamp() });
+  await updateDoc(postRef, { likesCount: increment(1) });
   return true;
 }
 
 export function subscribeIsPostLiked(postId, userId, callback) {
-  const likeId = `${postId}_${userId}`;
-
-  return onSnapshot(doc(db, "postLikes", likeId), (snap) => {
+  return onSnapshot(doc(db, "postLikes", `${postId}_${userId}`), (snap) => {
     callback(snap.exists());
   });
 }
@@ -305,9 +243,38 @@ export function subscribeIsPostLiked(postId, userId, callback) {
 ------------------------------------------------ */
 
 export async function markPostSolved(postId) {
-  await updateDoc(doc(db, "posts", postId), {
+  const postRef = doc(db, "posts", postId);
+  const postSnap = await getDoc(postRef);
+
+  if (!postSnap.exists()) return;
+  const postData = postSnap.data();
+
+  // 1. Update the Post Status
+  await updateDoc(postRef, {
     solved: true,
     status: "solved",
     updatedAt: serverTimestamp(),
   });
+
+  // 2. DYNAMIC SYNC: Increment the "Solved" count on Home Screen
+  try {
+    await updateDoc(STATS_REF, {
+      solvedCount: increment(1),
+    });
+  } catch (err) {
+    console.error("Stats solvedCount sync failed:", err);
+  }
+
+  // 3. LOG ACTIVITY: Broadcast the success to the Live Updates feed
+  try {
+    await addDoc(collection(db, "activities"), {
+      type: "solved",
+      category: postData.primaryExpertiseName || "Success",
+      message: `Success! ${postData.authorName}'s challenge was marked Solved.`,
+      postId: postId,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.log("Activity log failed", err);
+  }
 }

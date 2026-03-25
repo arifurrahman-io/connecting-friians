@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { Link, router } from "expo-router";
 import { useState } from "react";
 import {
-  Alert,
   Dimensions,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +13,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  FadeOut,
+} from "react-native-reanimated";
+
 import InputField from "../../src/components/InputField";
 import PrimaryButton from "../../src/components/PrimaryButton";
 import { registerUser } from "../../src/services/authService";
@@ -27,43 +33,72 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Dynamic Toast State
+  const [toast, setToast] = useState({
+    visible: false,
+    message: "",
+    type: "success",
+  });
+
+  const showToast = (message, type = "success") => {
+    setToast({ visible: true, message, type });
+
+    // Trigger Haptics based on type
+    if (type === "success") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+
+    // Auto-hide after 4 seconds
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, visible: false }));
+    }, 4000);
+  };
+
   const handleRegister = async () => {
-    if (
-      !name.trim() ||
-      !email.trim() ||
-      !password.trim() ||
-      !confirmPassword.trim()
-    ) {
-      Alert.alert("Missing information", "Please fill in all fields to join.");
+    // 1. Validations
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      showToast("Please fill in all details.", "error");
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert(
-        "Security Notice",
-        "For your safety, password must be at least 6 characters.",
-      );
+      showToast("Password must be 6+ characters.", "error");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert("Password mismatch", "The passwords entered do not match.");
+      showToast("Passwords do not match.", "error");
       return;
     }
 
     try {
       setLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
       await registerUser({ name, email, password });
-      Alert.alert(
-        "Welcome Aboard!",
-        "Registration successful. Please check your inbox for a verification email before logging in.",
-      );
-      router.replace("/(public)/login");
+
+      showToast("Account Created! Verify your email.", "success");
+
+      // Small delay to let the user see the success message
+      setTimeout(() => {
+        router.replace("/(public)/login");
+      }, 2000);
     } catch (error) {
-      Alert.alert(
-        "Registration failed",
-        error.message || "Something went wrong.",
-      );
+      console.error("Registration failed:", error.code);
+
+      // Map Firebase Errors to User-Friendly Messages
+      let errorMsg = "Could not register. Please try again.";
+      if (error.code === "auth/email-already-in-use") {
+        errorMsg = "This email is already registered.";
+      } else if (error.code === "auth/invalid-email") {
+        errorMsg = "Please use a valid email address.";
+      } else if (error.code === "auth/network-request-failed") {
+        errorMsg = "Check your internet connection.";
+      }
+
+      showToast(errorMsg, "error");
     } finally {
       setLoading(false);
     }
@@ -76,6 +111,29 @@ export default function RegisterScreen() {
         translucent
         backgroundColor="transparent"
       />
+
+      {/* --- DYNAMIC TOAST NOTIFICATION --- */}
+      {toast.visible && (
+        <Animated.View
+          entering={FadeInUp}
+          exiting={FadeOut}
+          style={[
+            styles.toastContainer,
+            {
+              backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444",
+            },
+          ]}
+        >
+          <Ionicons
+            name={
+              toast.type === "success" ? "checkmark-circle" : "alert-circle"
+            }
+            size={20}
+            color="#fff"
+          />
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
+      )}
 
       {/* Decorative Header Background */}
       <View style={styles.topBg}>
@@ -92,20 +150,23 @@ export default function RegisterScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Hero Section */}
-          <View style={styles.heroSection}>
+          <Animated.View
+            entering={FadeInUp.duration(800)}
+            style={styles.heroSection}
+          >
             <View style={styles.logoCircle}>
               <Ionicons name="person-add-sharp" size={38} color="#fff" />
             </View>
             <Text style={styles.brand}>Join FRIIANS</Text>
             <Text style={styles.tagline}>
-              Build your professional alumni profile and connect with verified
-              experts.
+              Build your alumni profile and connect with verified experts.
             </Text>
-          </View>
+          </Animated.View>
 
-          {/* Registration Card */}
-          <View style={styles.card}>
+          <Animated.View
+            entering={FadeInDown.delay(200).duration(800)}
+            style={styles.card}
+          >
             <View style={styles.cardHeader}>
               <Text style={styles.title}>Create Account</Text>
               <Text style={styles.subtitle}>
@@ -150,17 +211,6 @@ export default function RegisterScreen() {
                 leftIcon="shield-checkmark-outline"
               />
 
-              <View style={styles.infoBox}>
-                <Ionicons
-                  name="information-circle"
-                  size={20}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.infoText}>
-                  We will send a verification link to your email.
-                </Text>
-              </View>
-
               <PrimaryButton
                 title="Create Account"
                 onPress={handleRegister}
@@ -176,16 +226,15 @@ export default function RegisterScreen() {
             </View>
 
             <Link href="/(public)/login" asChild>
-              <TouchableOpacity style={styles.loginButton} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.loginButton}
+                activeOpacity={0.7}
+                onPress={() => Haptics.selectionAsync()}
+              >
                 <Text style={styles.loginActionText}>Back to Sign In</Text>
               </TouchableOpacity>
             </Link>
-          </View>
-
-          <Text style={styles.footerText}>
-            By joining, you agree to connect responsibly within the FRIIANS
-            alumni network.
-          </Text>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -193,10 +242,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#F4F7FE",
-  },
+  screen: { flex: 1, backgroundColor: "#F4F7FE" },
   topBg: {
     position: "absolute",
     top: 0,
@@ -232,14 +278,11 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 40,
   },
-  heroSection: {
-    alignItems: "center",
-    marginBottom: 28,
-  },
+  heroSection: { alignItems: "center", marginBottom: 28 },
   logoCircle: {
     width: 80,
     height: 80,
-    borderRadius: 24, // Squircle
+    borderRadius: 24,
     backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -247,15 +290,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
   },
-  brand: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: "#fff",
-  },
+  brand: { fontSize: 30, fontWeight: "900", color: "#fff" },
   tagline: {
     marginTop: 8,
     fontSize: 15,
-    lineHeight: 22,
     color: "rgba(255,255,255,0.85)",
     textAlign: "center",
     paddingHorizontal: 20,
@@ -264,60 +302,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 30,
     padding: 24,
+    elevation: 10,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 15 },
     shadowOpacity: 0.1,
     shadowRadius: 25,
-    elevation: 10,
   },
-  cardHeader: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#1E293B",
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 15,
-    color: "#64748B",
-  },
-  formArea: {
-    gap: 2,
-  },
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F7FF",
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 10,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#D1E9FF",
-    gap: 10,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 12,
-    color: "#475569",
-    fontWeight: "600",
-  },
-  registerBtn: {
-    borderRadius: 16,
-    height: 56,
-  },
+  cardHeader: { marginBottom: 20 },
+  title: { fontSize: 26, fontWeight: "800", color: "#1E293B" },
+  subtitle: { marginTop: 4, fontSize: 15, color: "#64748B" },
+  formArea: { gap: 12 },
+  registerBtn: { borderRadius: 16, height: 56, marginTop: 10 },
   dividerRow: {
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 25,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#F1F5F9",
-  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#F1F5F9" },
   dividerText: {
     marginHorizontal: 15,
     fontSize: 11,
@@ -330,17 +331,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
   },
-  loginActionText: {
-    color: COLORS.primary,
-    fontSize: 15,
-    fontWeight: "800",
-  },
+  loginActionText: { color: COLORS.primary, fontSize: 15, fontWeight: "800" },
   footerText: {
     marginTop: 25,
     textAlign: "center",
     fontSize: 13,
     color: "#94A3B8",
-    lineHeight: 20,
     paddingHorizontal: 30,
+  },
+
+  // --- TOAST STYLES ---
+  toastContainer: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

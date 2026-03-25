@@ -1,24 +1,63 @@
-export function timeAgo(timestamp) {
-  if (!timestamp) return "";
+/**
+ * Converts a Firebase Timestamp or Date into a human-readable string.
+ * High-performance version with future-date protection.
+ */
+export function formatTimeAgo(date) {
+  if (!date) return "";
 
-  const date = timestamp?.seconds
-    ? new Date(timestamp.seconds * 1000)
-    : new Date(timestamp);
+  // 1. Convert Firebase Timestamp or String to JS Date object
+  const jsDate = date?.toDate ? date.toDate() : new Date(date);
 
-  const seconds = Math.floor((new Date() - date) / 1000);
+  // Validate date to prevent "Invalid Date" UI errors
+  if (isNaN(jsDate.getTime())) return "";
 
-  if (seconds < 60) return "Just now";
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - jsDate.getTime()) / 1000);
 
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  // Handle system clock desync (future dates)
+  if (diffInSeconds < 0) return "Just now";
 
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  // 2. Time Logic Intervals
+  const intervals = {
+    year: 31536000,
+    month: 2592000,
+    week: 604800,
+    day: 86400,
+    hour: 3600,
+    minute: 60,
+  };
 
-  const days = Math.floor(hours / 24);
+  // 3. Return dynamic strings
+  if (diffInSeconds < intervals.minute) {
+    return "Just now";
+  }
 
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
+  if (diffInSeconds < intervals.hour) {
+    const mins = Math.floor(diffInSeconds / intervals.minute);
+    return `${mins}m ago`;
+  }
 
-  return date.toLocaleDateString();
+  if (diffInSeconds < intervals.day) {
+    const hours = Math.floor(diffInSeconds / intervals.hour);
+    return `${hours}h ago`;
+  }
+
+  if (diffInSeconds < intervals.week) {
+    const days = Math.floor(diffInSeconds / intervals.day);
+    if (days === 1) return "Yesterday";
+    return `${days}d ago`;
+  }
+
+  if (diffInSeconds < intervals.month) {
+    const weeks = Math.floor(diffInSeconds / intervals.week);
+    return `${weeks}w ago`;
+  }
+
+  // 4. For older dates, show the actual date (e.g., "Oct 11")
+  // Using 'short' month for better fit in narrow Bento cards
+  return jsDate.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: jsDate.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
 }
