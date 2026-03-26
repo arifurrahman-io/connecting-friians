@@ -9,12 +9,12 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  updateDoc,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 
-// Consistent path for your dynamic bento grid stats
+// Path for dynamic bento grid stats
 const STATS_REF = doc(db, "platform_metadata", "global_metrics");
 
 /* -----------------------------
@@ -25,7 +25,6 @@ export async function getUserProfile(uid) {
     const ref = doc(db, "users", uid);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
-
     return { id: snap.id, ...snap.data() };
   } catch (error) {
     console.error("Error fetching user profile:", error);
@@ -55,67 +54,65 @@ export function subscribeUserProfile(uid, callback) {
    UPDATE USER PROFILE + SYNC STATS
 ----------------------------- */
 export async function updateUserProfile(uid, payload) {
+  if (!uid) throw new Error("UID is required for profile update");
+
   const userRef = doc(db, "users", uid);
 
-  // 1. Get current snapshot to compare old vs new state
-  const currentSnap = await getDoc(userRef);
-  const oldData = currentSnap.data() || {};
-
-  const wasCompleted = oldData.profileCompleted || false;
-  const wasExpert = oldData.expertise?.length > 0;
-  const isNowExpert = payload.expertise?.length > 0;
-
-  // 2. Prepare update object
-  const updateData = {
-    ...payload,
-    updatedAt: serverTimestamp(),
-  };
-
-  // 3. DYNAMIC SYNC LOGIC
   try {
+    // 1. Get current snapshot to compare old vs new state
+    const currentSnap = await getDoc(userRef);
+    const oldData = currentSnap.data() || {};
+
+    const wasCompleted = oldData.profileCompleted || false;
+    const wasExpert = oldData.expertise?.length > 0;
+    const isNowExpert = payload.expertise?.length > 0;
+
+    // 2. Prepare update object
+    const updateData = {
+      ...payload,
+      updatedAt: serverTimestamp(),
+    };
+
+    // 3. DYNAMIC SYNC LOGIC (Updates Global Bento Grid Stats)
     const statsUpdate = {};
 
-    // A. If first time completing profile
+    // A. If first time completing profile (New Active User)
     if (!wasCompleted && payload.profileCompleted) {
-      // Note: activeUsers is usually handled at registration,
-      // but we can increment here if you only count "completed" profiles.
-      // statsUpdate.activeUsers = increment(1);
+      statsUpdate.activeUsers = increment(1);
 
+      // Log activity to the feed
       await addDoc(collection(db, "activities"), {
         type: "join",
-        message: `${payload.fullName || "A new member"} completed their profile!`,
+        message: `${payload.fullName || "A new member"} joined the community!`,
         userId: uid,
         createdAt: serverTimestamp(),
       });
     }
 
-    // B. EXPERT COUNT SYNC: If they just added their first expertise
+    // B. EXPERT COUNT SYNC
     if (!wasExpert && isNowExpert) {
       statsUpdate.expertCount = increment(1);
-
-      await addDoc(collection(db, "activities"), {
-        type: "join", // Using join icon for new experts
-        message: `${payload.fullName || "Someone"} just became a verified Expert!`,
-        userId: uid,
-        createdAt: serverTimestamp(),
-      });
-    }
-    // If they removed all expertise (unlikely but safe to handle)
-    else if (wasExpert && !isNowExpert) {
+    } else if (wasExpert && !isNowExpert) {
       statsUpdate.expertCount = increment(-1);
     }
 
-    // Apply stats update if any changes exist
+    // Apply stats update to platform_metadata if changes exist
     if (Object.keys(statsUpdate).length > 0) {
-      await updateDoc(STATS_REF, statsUpdate);
+      try {
+        await setDoc(STATS_REF, statsUpdate, { merge: true });
+      } catch (e) {
+        console.warn("Stats update failed, continuing profile save:", e);
+      }
     }
 
     // 4. Update the User Document
-    await updateDoc(userRef, updateData);
+    // Using setDoc with merge: true is safer than updateDoc for first-time saves
+    await setDoc(userRef, updateData, { merge: true });
+
+    return { success: true };
   } catch (error) {
-    console.error("Dynamic sync failed in profile update:", error);
-    // Fallback: still try to update the user profile even if stats fail
-    await updateDoc(userRef, updateData);
+    console.error("Profile update failed:", error);
+    throw error;
   }
 }
 
