@@ -83,7 +83,7 @@ export default function PostCard({ post, onPress }) {
 
         {post.solved ? (
           <View style={styles.solvedStatus}>
-            <Ionicons name="checkmark-seal" size={18} color="#10B981" />
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
             <Text style={styles.solvedLabel}>SOLVED</Text>
           </View>
         ) : (

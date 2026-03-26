@@ -21,7 +21,7 @@ const STATS_REF = doc(db, "platform_metadata", "global_metrics");
 /**
  * Registers a new user with fail-safe database and email logic.
  */
-export async function registerUser({ name, email, password }) {
+export async function registerUser({ fullName, email, password }) {
   // 1. Create the Auth Account
   const result = await createUserWithEmailAndPassword(
     auth,
@@ -30,13 +30,13 @@ export async function registerUser({ name, email, password }) {
   );
 
   const user = result.user;
-  const trimmedName = name.trim();
+  const trimmedName = fullName.trim();
 
   // 2. CREATE FIRESTORE PROFILE (Crucial step)
   // We do this first so the user record exists immediately.
   await setDoc(doc(db, "users", user.uid), {
     uid: user.uid,
-    name: trimmedName,
+    fullName: trimmedName,
     email: email.trim().toLowerCase(),
     phone: "",
     gender: "",

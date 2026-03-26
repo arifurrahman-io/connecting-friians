@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -19,9 +21,26 @@ function AlumniCard({ item, onPress }) {
     ? item.expertise.slice(0, 2)
     : [];
 
+  // Dynamic color logic
+  const bgColors = ["#6366F1", "#EC4899", "#8B5CF6", "#10B981", "#F59E0B"];
+  const bgColor = bgColors[avatarLetter.charCodeAt(0) % bgColors.length];
+
   return (
-    <TouchableOpacity activeOpacity={0.7} style={styles.card} onPress={onPress}>
+    <TouchableOpacity
+      activeOpacity={0.8}
+      style={styles.card}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+    >
       <View style={styles.cardContent}>
+        <View style={[styles.avatarFrame, { backgroundColor: bgColor + "15" }]}>
+          <View style={[styles.innerAvatar, { backgroundColor: bgColor }]}>
+            <Text style={styles.avatarText}>{avatarLetter}</Text>
+          </View>
+        </View>
+
         <View style={styles.mainInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={1}>
@@ -35,15 +54,10 @@ function AlumniCard({ item, onPress }) {
           </View>
 
           <View style={styles.detailsRow}>
-            <View style={styles.detailItem}>
-              <Ionicons name="mail-outline" size={12} color="#94A3B8" />
-              <Text style={styles.detailText}>{item.email || "Private"}</Text>
-            </View>
-            <View style={styles.dotSeparator} />
-            <View style={styles.detailItem}>
-              <Ionicons name="male-female-sharp" size={12} color="#94A3B8" />
-              <Text style={styles.detailText}>{item.gender || "Member"}</Text>
-            </View>
+            <Ionicons name="mail-outline" size={12} color="#94A3B8" />
+            <Text style={styles.detailText} numberOfLines={1}>
+              {item.email || "Private"}
+            </Text>
           </View>
 
           <View style={styles.expertiseContainer}>
@@ -59,8 +73,7 @@ function AlumniCard({ item, onPress }) {
             )}
           </View>
         </View>
-
-        <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+        <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
       </View>
     </TouchableOpacity>
   );
@@ -90,38 +103,34 @@ export default function DirectoryScreen() {
   }, [users, search]);
 
   return (
-    <AppScreen backgroundColor="#F8FAFC">
-      <View style={styles.headerSection}>
-        <View>
-          <Text style={styles.welcomeText}>Community</Text>
-          <Text style={styles.titleText}>FRIIANS Directory</Text>
+    <AppScreen backgroundColor="#FDFDFD">
+      {/* Fixed Header Section */}
+      <View style={styles.fixedHeader}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.welcomeText}>Community</Text>
+            <Text style={styles.titleText}>FRIIANS Directory</Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.filterBtn}>
-          <Ionicons name="options-outline" size={22} color={COLORS.primary} />
-        </TouchableOpacity>
+
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={18} color="#94A3B8" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, year, or skill..."
+            placeholderTextColor="#94A3B8"
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")}>
+              <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons
-          name="search"
-          size={20}
-          color="#94A3B8"
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by name, year, or skill..."
-          placeholderTextColor="#94A3B8"
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch("")}>
-            <Ionicons name="close-circle" size={18} color="#CBD5E1" />
-          </TouchableOpacity>
-        )}
-      </View>
-
+      {/* Scrollable List Area */}
       <FlatList
         data={filteredUsers}
         keyExtractor={(item) => item.id}
@@ -133,6 +142,10 @@ export default function DirectoryScreen() {
         )}
         contentContainerStyle={styles.listPadding}
         showsVerticalScrollIndicator={false}
+        // Optimize scrolling performance
+        removeClippedSubviews={true}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
         ListHeaderComponent={
           <Text style={styles.countText}>
             {filteredUsers.length} Professionals Found
@@ -144,27 +157,33 @@ export default function DirectoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerSection: {
+  fixedHeader: {
+    paddingHorizontal: 4,
+    paddingTop: Platform.OS === "ios" ? 10 : 15,
+    backgroundColor: "#FDFDFD",
+  },
+  headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 15,
+    marginBottom: 12,
   },
   welcomeText: {
-    fontSize: 14,
+    fontSize: 11,
     color: COLORS.primary,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   titleText: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#1E293B",
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.5,
   },
   filterBtn: {
-    width: 45,
-    height: 45,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     backgroundColor: "#fff",
     justifyContent: "center",
@@ -175,148 +194,122 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    paddingHorizontal: 15,
-    height: 54,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 46,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    marginBottom: 20,
+    marginBottom: 8,
   },
-  searchIcon: { marginRight: 10 },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     color: "#1E293B",
+    marginLeft: 8,
   },
   listPadding: {
-    paddingBottom: 30,
+    paddingHorizontal: 4,
+    paddingBottom: 40,
+    paddingTop: 8,
   },
   countText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#64748B",
-    marginBottom: 15,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#94A3B8",
+    marginBottom: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardContent: {
     flexDirection: "row",
     alignItems: "center",
   },
-  avatarContainer: {
-    position: "relative",
+  avatarFrame: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    padding: 3,
   },
-  avatarGradient: {
-    width: 55,
-    height: 55,
-    borderRadius: 18,
+  innerAvatar: {
+    flex: 1,
+    borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
   },
   avatarText: {
     color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  onlineBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#22C55E",
-    borderWidth: 2,
-    borderColor: "#fff",
+    fontSize: 18,
+    fontWeight: "800",
   },
   mainInfo: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 12,
   },
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   name: {
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
     color: "#1E293B",
     flex: 1,
-    marginRight: 8,
   },
   batchBadge: {
     backgroundColor: "#F1F5F9",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   batchText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 10,
+    fontWeight: "800",
     color: "#475569",
   },
   detailsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  detailItem: {
-    flexDirection: "row",
-    alignItems: "center",
+    marginBottom: 6,
   },
   detailText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#64748B",
     marginLeft: 4,
-  },
-  dotSeparator: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: "#CBD5E1",
-    marginHorizontal: 8,
   },
   expertiseContainer: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
     gap: 6,
   },
   tag: {
-    backgroundColor: "#EEF2FF",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
+    backgroundColor: COLORS.primary + "10",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   tagText: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 10,
+    fontWeight: "700",
     color: COLORS.primary,
   },
   moreText: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#94A3B8",
-    fontWeight: "500",
+    fontWeight: "600",
   },
 });

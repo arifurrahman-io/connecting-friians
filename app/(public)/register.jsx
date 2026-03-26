@@ -27,7 +27,7 @@ import { COLORS } from "../../src/theme/colors";
 const { width } = Dimensions.get("window");
 
 export default function RegisterScreen() {
-  const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -58,7 +58,7 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     // 1. Validations
-    if (!name.trim() || !email.trim() || !password.trim()) {
+    if (!fullName.trim() || !email.trim() || !password.trim()) {
       showToast("Please fill in all details.", "error");
       return;
     }
@@ -77,7 +77,7 @@ export default function RegisterScreen() {
       setLoading(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      await registerUser({ name, email, password });
+      await registerUser({ fullName, email, password });
 
       showToast("Account Created! Verify your email.", "success");
 
@@ -177,9 +177,9 @@ export default function RegisterScreen() {
             <View style={styles.formArea}>
               <InputField
                 label="Full Name"
-                value={name}
-                onChangeText={setName}
-                placeholder="John Doe"
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Write your full name here"
                 leftIcon="person-outline"
               />
 

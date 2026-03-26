@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useNavigation } from "expo-router";
-import { useEffect, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
+  Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -20,54 +23,82 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
-  const navigation = useNavigation();
 
   useEffect(() => {
     const unsub = subscribePosts(setPosts);
     return unsub;
   }, []);
 
-  // Filter logic for both search and category
-  const filteredPosts = posts.filter((p) => {
-    const matchesSearch = p.title?.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory =
-      activeCategory === "All" || p.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredPosts = useMemo(() => {
+    return posts.filter((p) => {
+      const titleMatch = p.title?.toLowerCase().includes(search.toLowerCase());
+      const bodyMatch = p.body?.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = titleMatch || bodyMatch;
+
+      const matchesCategory =
+        activeCategory === "All" ||
+        p.primaryExpertiseName === activeCategory ||
+        p.category === activeCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [posts, search, activeCategory]);
+
+  const handleCategoryPress = (item) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveCategory(item);
+  };
 
   return (
-    <AppScreen backgroundColor="#F8FAFC">
-      {/* Premium Navigation Header */}
+    <AppScreen backgroundColor="#FDFDFD">
+      <StatusBar barStyle="dark-content" />
+
+      {/* --- COMPACT HEADER --- */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Problem Feed</Text>
-        <TouchableOpacity style={styles.filterMenuBtn}>
-          <Ionicons name="options-outline" size={22} color={COLORS.text} />
+        <View>
+          <Text style={styles.greeting}>Community</Text>
+          <Text style={styles.headerTitle}>Problem Feed</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.profileCircle}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/profile");
+          }}
+        >
+          <Ionicons
+            name="person-circle-outline"
+            size={26}
+            color={COLORS.primary}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Search Section */}
+      {/* --- COMPACT SEARCH --- */}
       <View style={styles.searchSection}>
         <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={20} color="#94A3B8" />
+          <Ionicons name="search" size={16} color="#64748B" />
           <TextInput
-            placeholder="Search problems or expertise..."
+            placeholder="Search problems..."
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
             placeholderTextColor="#94A3B8"
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+            <TouchableOpacity
+              onPress={() => {
+                setSearch("");
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }}
+            >
+              <Ionicons name="close-circle" size={16} color="#CBD5E1" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Dynamic Category Selector */}
+      {/* --- TIGHT CATEGORIES --- */}
       <View style={styles.categoryContainer}>
         <FlatList
           data={CATEGORIES}
@@ -76,7 +107,7 @@ export default function FeedScreen() {
           contentContainerStyle={styles.categoryList}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => setActiveCategory(item)}
+              onPress={() => handleCategoryPress(item)}
               style={[
                 styles.categoryChip,
                 activeCategory === item && styles.activeCategoryChip,
@@ -96,45 +127,42 @@ export default function FeedScreen() {
         />
       </View>
 
-      {/* The Problem List */}
+      {/* --- MAIN FEED LIST --- */}
       <FlatList
         data={filteredPosts}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            onPress={() => router.push(`/post/${item.id}`)}
-          />
+          <View style={styles.cardWrapper}>
+            <PostCard
+              post={item}
+              onPress={() => router.push(`/post/${item.id}`)}
+            />
+          </View>
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <View style={styles.emptyIconCircle}>
-              <Ionicons
-                name="search-outline"
-                size={40}
-                color={COLORS.primary}
-              />
-            </View>
-            <Text style={styles.emptyTitle}>No Results Found</Text>
-            <Text style={styles.emptySubtitle}>
-              Try adjusting your search or category filters to find what you're
-              looking for.
-            </Text>
+            <Ionicons name="document-text-outline" size={32} color="#CBD5E1" />
+            <Text style={styles.emptyTitle}>No matching posts</Text>
           </View>
         }
       />
 
-      {/* Floating Action Button for New Post */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push("/create-post")}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add" size={32} color="#fff" />
-        <Text style={styles.fabText}>Ask Guidance</Text>
-      </TouchableOpacity>
+      {/* --- FAB --- */}
+      <View style={styles.fabWrapper}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/create-post");
+          }}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="add" size={22} color="#fff" />
+          <Text style={styles.fabText}>Ask Guidance</Text>
+        </TouchableOpacity>
+      </View>
     </AppScreen>
   );
 }
@@ -144,135 +172,122 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 8 : 12,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+  },
+  greeting: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#1E293B",
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.5,
   },
-  backBtn: {
+  profileCircle: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-  },
-  filterMenuBtn: {
-    width: 40,
-    height: 40,
+    backgroundColor: COLORS.primary + "12",
     justifyContent: "center",
     alignItems: "center",
   },
   searchSection: {
-    paddingHorizontal: 20,
-    marginBottom: 15,
+    paddingHorizontal: 4,
+    marginBottom: 12,
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    height: 52,
-    borderRadius: 16,
-    paddingHorizontal: 15,
+    backgroundColor: "#F1F5F9",
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 10,
-    fontSize: 15,
+    marginLeft: 8,
+    fontSize: 14,
     color: "#1E293B",
-    fontWeight: "500",
   },
   categoryContainer: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   categoryList: {
-    paddingHorizontal: 20,
-    gap: 10,
-    paddingBottom: 5,
+    paddingHorizontal: 4,
+    gap: 8,
   },
   categoryChip: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#fff",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "#FFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
   activeCategoryChip: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: "#0F172A",
+    borderColor: "#0F172A",
   },
   categoryText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
     color: "#64748B",
   },
   activeCategoryText: {
-    color: "#fff",
+    color: "#FFF",
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 100,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    paddingBottom: 120,
+  },
+  cardWrapper: {
+    marginBottom: 10, // Reduced space between cards
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 60,
-    paddingHorizontal: 40,
-  },
-  emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
+    marginTop: 40,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#1E293B",
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: "700",
     color: "#94A3B8",
-    textAlign: "center",
-    lineHeight: 20,
+    marginTop: 8,
+  },
+  fabWrapper: {
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 30 : 20,
+    left: 16,
+    right: 16,
+    zIndex: 999,
   },
   fab: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
     backgroundColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 20,
+    justifyContent: "center",
+    height: 54,
+    borderRadius: 16,
     elevation: 8,
     shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 15,
+    shadowRadius: 12,
   },
   fabText: {
     color: "#fff",
     fontWeight: "800",
-    marginLeft: 8,
+    marginLeft: 6,
     fontSize: 15,
   },
 });

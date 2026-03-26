@@ -177,7 +177,7 @@ export default function HomeScreen() {
           <View>
             <Text style={styles.greeting}>{greeting},</Text>
             <Text style={styles.name}>
-              {profile?.fullName?.split(" ")[0] || "Friend"}
+              {profile?.fullName?.split(" ")[1] || "Friend"}
             </Text>
           </View>
           <TouchableOpacity
@@ -334,7 +334,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20 },
+  container: { padding: 10 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
