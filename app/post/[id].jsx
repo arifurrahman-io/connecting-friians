@@ -8,100 +8,116 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import InputField from "../../src/components/InputField";
 import { useAuth } from "../../src/context/AuthContext";
 import {
   addComment,
   buildCommentTree,
+  deleteComment,
+  deletePost,
   markPostSolved,
   subscribeComments,
   subscribeIsPostLiked,
   subscribePost,
   toggleLikePost,
+  updateComment,
+  updatePost,
 } from "../../src/services/postService";
 import { COLORS } from "../../src/theme/colors";
 import { formatTimeAgo } from "../../src/utils/timeAgo";
 
 // --- SUB-COMPONENT: COMMENT ITEM ---
-function CommentItem({ item, post, profile, onReply, level = 0 }) {
-  const isExpert = item.authorExpertise?.includes(post.primaryExpertiseName);
-  const isAuthor = item.authorId === post.authorId;
-  const isNested = level > 0;
+function CommentItem({
+  item,
+  post,
+  isAdmin,
+  currentUserId,
+  onReply,
+  onDelete,
+  onEdit,
+}) {
+  const isPostAuthor = item.authorId === post.authorId;
+  const isCommentOwner = item.authorId === currentUserId;
+  const isNested = item.parentId !== null;
 
   return (
-    <View style={[styles.commentWrapper, { marginLeft: isNested ? 20 : 0 }]}>
-      {/* Visual Thread Connector */}
+    <View style={[styles.commentWrapper, { marginLeft: isNested ? 12 : 0 }]}>
       {isNested && <View style={styles.connectorLine} />}
 
-      <View
-        style={[
-          styles.commentCard,
-          isExpert && styles.expertCardGlow,
-          isAuthor && styles.authorCardBorder,
-        ]}
-      >
+      <View style={styles.commentCard}>
         <View style={styles.commentHeader}>
-          <View
-            style={[
-              styles.miniAvatar,
-              { backgroundColor: isExpert ? "#F59E0B" : COLORS.primary + "20" },
-            ]}
-          >
-            <Text
+          <View style={styles.commentUserInfo}>
+            <View
               style={[
-                styles.miniAvatarText,
-                { color: isExpert ? "#FFF" : COLORS.primary },
+                styles.avatarSquircle,
+                { backgroundColor: isPostAuthor ? COLORS.primary : "#F1F5F9" },
               ]}
             >
-              {(item.authorName || "U")[0].toUpperCase()}
-            </Text>
+              <Text
+                style={[
+                  styles.avatarText,
+                  { color: isPostAuthor ? "#FFF" : COLORS.primary },
+                ]}
+              >
+                {item.authorName?.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View>
+              <View style={styles.nameRow}>
+                <Text style={styles.commentAuthorName}>{item.authorName}</Text>
+                {isPostAuthor && (
+                  <View style={styles.opBadge}>
+                    <Text style={styles.opText}>Author</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.commentDate}>
+                {formatTimeAgo(item.createdAt)}
+              </Text>
+            </View>
           </View>
 
-          <View style={{ flex: 1 }}>
-            <View style={styles.commentMetaRow}>
-              <Text style={styles.commentAuthorName}>{item.authorName}</Text>
-              {isExpert && (
-                <View style={styles.proBadge}>
-                  <Text style={styles.proBadgeText}>PRO</Text>
-                </View>
-              )}
-              {isAuthor && (
-                <View style={styles.opBadge}>
-                  <Text style={styles.opText}>OP</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.commentDate}>
-              {formatTimeAgo(item.createdAt)}
-            </Text>
+          <View style={styles.commentActions}>
+            {isCommentOwner && !post.solved && (
+              <TouchableOpacity
+                onPress={() => onEdit(item)}
+                style={styles.actionIconBtn}
+              >
+                <Ionicons name="create-outline" size={18} color="#1a2cd1" />
+              </TouchableOpacity>
+            )}
+            {(isAdmin || isCommentOwner) && (
+              <TouchableOpacity
+                onPress={() => onDelete(post.id, item.id)} // FIXED: Pass both IDs
+                style={styles.actionIconBtn}
+              >
+                <Ionicons name="trash-sharp" size={18} color="#ff354d" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
         <Text style={styles.commentContent}>{item.body}</Text>
 
-        <View style={styles.commentFooter}>
+        {!post.solved && (
           <TouchableOpacity
-            style={styles.ghostBtn}
+            style={styles.replyAction}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onReply(item);
             }}
           >
-            <Ionicons
-              name="chatbubble-outline"
-              size={14}
-              color={COLORS.primary}
-            />
-            <Text style={styles.ghostBtnText}>Reply</Text>
+            <Text style={styles.replyActionText}>Reply</Text>
           </TouchableOpacity>
-        </View>
+        )}
       </View>
 
       {item.replies?.map((reply) => (
@@ -109,8 +125,11 @@ function CommentItem({ item, post, profile, onReply, level = 0 }) {
           key={reply.id}
           item={reply}
           post={post}
+          isAdmin={isAdmin}
+          currentUserId={currentUserId}
           onReply={onReply}
-          level={level + 1}
+          onDelete={onDelete}
+          onEdit={onEdit}
         />
       ))}
     </View>
@@ -121,7 +140,7 @@ function CommentItem({ item, post, profile, onReply, level = 0 }) {
 export default function PostDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
 
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -130,14 +149,19 @@ export default function PostDetailsScreen() {
   const [liked, setLiked] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
 
-  // 1. Data Subscriptions
+  const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [editBody, setEditBody] = useState("");
+
   useEffect(() => {
-    const unsubPost = subscribePost(id, setPost);
+    const unsubPost = subscribePost(id, (data) => {
+      if (!data) router.back();
+      setPost(data);
+    });
     const unsubComments = subscribeComments(id, setComments);
     let unsubLiked;
-    if (user?.uid) {
-      unsubLiked = subscribeIsPostLiked(id, user.uid, setLiked);
-    }
+    if (user?.uid) unsubLiked = subscribeIsPostLiked(id, user.uid, setLiked);
+
     return () => {
       unsubPost?.();
       unsubComments?.();
@@ -145,15 +169,13 @@ export default function PostDetailsScreen() {
     };
   }, [id, user?.uid]);
 
-  // 2. Logic: Build Threaded Tree
   const threadedComments = useMemo(
     () => buildCommentTree(comments),
     [comments],
   );
 
-  // 3. Logic: Add Comment / Reply
   const handleComment = async () => {
-    if (!comment.trim()) return;
+    if (!comment.trim() || post.solved) return;
     try {
       setLoading(true);
       await addComment({
@@ -174,420 +196,537 @@ export default function PostDetailsScreen() {
     }
   };
 
-  // 4. Logic: Toggle Like
-  const handleLike = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await toggleLikePost(id, user.uid);
+  const openEditModal = (item = null) => {
+    setEditingItem(item);
+    setEditBody(item ? item.body : post.body);
+    setEditModalVisible(true);
   };
 
-  // 5. Logic: Mark Solved
-  const handleSolved = async () => {
-    Alert.alert(
-      "Mark as Solved?",
-      "This will signal that the solution is verified.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Confirm",
-          onPress: async () => {
-            await markPostSolved(id);
+  const handleUpdate = async () => {
+    if (!editBody.trim()) return;
+    try {
+      setLoading(true);
+      if (editingItem) {
+        await updateComment(editingItem.id, editBody);
+      } else {
+        await updatePost(id, { body: editBody.trim() });
+      }
+      setEditModalVisible(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      Alert.alert("Update Failed", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePost = () => {
+    Alert.alert("Delete Post", "Permanently remove this discussion?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoading(true);
+            router.back();
+            await deletePost(id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
+          } catch (error) {
+            Alert.alert("Error", error.message);
+          } finally {
+            setLoading(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
+  };
+
+  const handleDeleteComment = async (postId, commentId) => {
+    Alert.alert("Remove Response", "Delete this comment and its replies?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteComment(postId, commentId); // Correctly passing both IDs
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch (error) {
+            Alert.alert("Error", "Could not delete comment.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleMarkSolved = async () => {
+    try {
+      await markPostSolved(id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Error", "Could not mark as solved.");
+    }
   };
 
   if (!post)
     return (
       <View style={styles.loader}>
-        <Text style={styles.loadingText}>Loading conversation...</Text>
+        <Text>Loading...</Text>
       </View>
     );
 
   const isOwner = user?.uid === post.authorId;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.mainContainer}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-    >
+    <View style={styles.mainContainer}>
       <StatusBar barStyle="dark-content" />
-
-      <FlatList
-        data={threadedComments}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View style={styles.mainPostSection}>
-            {/* Top Meta Data */}
-            <View style={styles.topMetaRow}>
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryLabel}>
-                  {post.primaryExpertiseName}
-                </Text>
-              </View>
-              {isOwner && !post.solved && (
-                <TouchableOpacity
-                  style={styles.solveBtn}
-                  onPress={handleSolved}
-                >
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={16}
-                    color="#10B981"
-                  />
-                  <Text style={styles.solveBtnText}>Mark Solved</Text>
-                </TouchableOpacity>
-              )}
-              {post.solved && (
-                <View style={styles.solvedPill}>
-                  <Ionicons
-                    name="checkmark-done-circle"
-                    size={14}
-                    color="#059669"
-                  />
-                  <Text style={styles.solvedPillText}>Verified Solution</Text>
-                </View>
-              )}
-            </View>
-
-            <Text style={styles.ultraTitle}>{post.title}</Text>
-
-            <View style={styles.authorBar}>
-              <View style={styles.authorLeft}>
-                <View style={styles.mainAvatar}>
-                  <Text style={styles.mainAvatarText}>
-                    {(post.authorName || "U")[0]}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        <FlatList
+          data={threadedComments}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={styles.headerSection}>
+              <View style={styles.metaRow}>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {post.primaryExpertiseName}
                   </Text>
                 </View>
-                <View>
-                  <Text style={styles.mainAuthorName}>{post.authorName}</Text>
-                  <Text style={styles.mainDate}>
+                <View style={styles.headerActions}>
+                  {(isAdmin || isOwner) && (
+                    <TouchableOpacity
+                      onPress={() => openEditModal(null)}
+                      style={styles.actionIconBtn}
+                    >
+                      <Ionicons
+                        name="create-outline"
+                        size={20}
+                        color="#1a2cd1"
+                      />
+                    </TouchableOpacity>
+                  )}
+                  {isAdmin && (
+                    <TouchableOpacity
+                      onPress={handleDeletePost}
+                      style={styles.actionIconBtn}
+                    >
+                      <Ionicons name="trash-sharp" size={20} color="#ff354d" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <Text style={styles.titleText}>{post.title}</Text>
+
+              <View style={styles.authorRow}>
+                <View style={styles.authorInfo}>
+                  <View style={styles.smallAvatar}>
+                    <Text style={styles.smallAvatarText}>
+                      {post.authorName?.charAt(0)}
+                    </Text>
+                  </View>
+                  <Text style={styles.authorNameText}>{post.authorName}</Text>
+                  <Text style={styles.dotSeparator}>•</Text>
+                  <Text style={styles.timeAgoText}>
                     {formatTimeAgo(post.createdAt)}
                   </Text>
                 </View>
+                {post.solved && (
+                  <View style={styles.solvedBadge}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#10B981"
+                    />
+                    <Text style={styles.solvedText}>Solved</Text>
+                  </View>
+                )}
               </View>
-            </View>
 
-            <Text style={styles.ultraBody}>{post.body}</Text>
+              <Text style={styles.bodyText}>{post.body}</Text>
 
-            <View style={styles.interactionBar}>
-              <TouchableOpacity
-                style={[styles.actionPill, liked && styles.activeLikePill]}
-                onPress={handleLike}
-              >
-                <Ionicons
-                  name={liked ? "heart" : "heart-outline"}
-                  size={18}
-                  color={liked ? "#EF4444" : "#64748B"}
-                />
-                <Text style={[styles.pillText, liked && { color: "#EF4444" }]}>
-                  {post.likesCount || 0}
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.actionPill}>
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={18}
-                  color="#64748B"
-                />
-                <Text style={styles.pillText}>{post.commentsCount || 0}</Text>
+              <View style={styles.statsBar}>
+                <TouchableOpacity
+                  style={[styles.statItem, liked && styles.statItemActive]}
+                  onPress={() => toggleLikePost(id, user.uid)}
+                >
+                  <Ionicons
+                    name={liked ? "heart" : "heart-outline"}
+                    size={18}
+                    color={liked ? "#EF4444" : "#64748B"}
+                  />
+                  <Text
+                    style={[styles.statText, liked && { color: "#EF4444" }]}
+                  >
+                    {post.likesCount || 0}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.statItem}>
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={18}
+                    color="#64748B"
+                  />
+                  <Text style={styles.statText}>{post.commentsCount || 0}</Text>
+                </View>
+                {isOwner && !post.solved && (
+                  <TouchableOpacity
+                    style={styles.solveActionBtn}
+                    onPress={handleMarkSolved}
+                  >
+                    <Text style={styles.solveActionBtnText}>
+                      Resolve Challenge
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
+              <View style={styles.sectionDivider} />
             </View>
-
-            <View style={styles.divider} />
-            <Text style={styles.convoHeader}>Discussion</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <CommentItem
-            item={item}
-            post={post}
-            profile={profile}
-            onReply={setReplyTo}
-          />
-        )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>
-            No replies yet. Be the first to help!
-          </Text>
-        }
-      />
-
-      {/* Floating Modern Composer */}
-      <BlurView
-        intensity={90}
-        tint="extraLight"
-        style={styles.composerContainer}
-      >
-        {replyTo && (
-          <View style={styles.replyPreview}>
-            <Text style={styles.replyPreviewText} numberOfLines={1}>
-              Replying to{" "}
-              <Text style={{ fontWeight: "800", color: COLORS.primary }}>
-                {replyTo.authorName}
-              </Text>
-            </Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)}>
-              <Ionicons name="close-circle" size={20} color="#94A3B8" />
-            </TouchableOpacity>
-          </View>
-        )}
+          }
+          renderItem={({ item }) => (
+            <CommentItem
+              item={item}
+              post={post}
+              isAdmin={isAdmin}
+              currentUserId={user?.uid}
+              onReply={setReplyTo}
+              onDelete={handleDeleteComment}
+              onEdit={openEditModal}
+            />
+          )}
+        />
 
         {post.solved ? (
-          <View style={styles.lockedInput}>
-            <Ionicons name="lock-closed" size={16} color="#059669" />
-            <Text style={styles.lockedText}>This discussion is closed.</Text>
+          <View style={styles.solvedFooter}>
+            <BlurView intensity={60} tint="light" style={styles.solvedBlur}>
+              <Ionicons name="lock-closed" size={16} color="#64748B" />
+              <Text style={styles.solvedFooterText}>
+                This discussion is closed.
+              </Text>
+            </BlurView>
           </View>
         ) : (
-          <View style={styles.inputRow}>
-            <View style={styles.inputWrapper}>
-              <InputField
+          <BlurView intensity={80} tint="light" style={styles.composerWrapper}>
+            {replyTo && (
+              <View style={styles.replyBanner}>
+                <Text style={styles.replyBannerText}>
+                  Replying to{" "}
+                  <Text style={{ fontWeight: "700" }}>
+                    {replyTo.authorName}
+                  </Text>
+                </Text>
+                <TouchableOpacity onPress={() => setReplyTo(null)}>
+                  <Ionicons name="close" size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.inputField}
+                placeholder="Write a response..."
                 value={comment}
                 onChangeText={setComment}
-                placeholder={
-                  replyTo ? "Write a reply..." : "Add to the discussion..."
-                }
-                containerStyle={styles.modernInput}
+                multiline
               />
+              <TouchableOpacity
+                style={[styles.sendCircle, !comment.trim() && { opacity: 0.5 }]}
+                onPress={handleComment}
+                disabled={!comment.trim() || loading}
+              >
+                <Ionicons name="arrow-up" size={20} color="#FFF" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[styles.sendBtn, !comment.trim() && styles.disabledSend]}
-              onPress={handleComment}
-              disabled={!comment.trim() || loading}
-            >
-              <Ionicons name="arrow-up" size={22} color="#FFF" />
-            </TouchableOpacity>
-          </View>
+          </BlurView>
         )}
-      </BlurView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+
+      <Modal visible={isEditModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={30} style={StyleSheet.absoluteFill} />
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalHeader}>
+              {editingItem ? "Edit Response" : "Edit Discussion"}
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              multiline
+              value={editBody}
+              onChangeText={setEditBody}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                onPress={() => setEditModalVisible(false)}
+                style={styles.btnSecondary}
+              >
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleUpdate}
+                style={styles.btnPrimary}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "600" }}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: "#FFFFFF" },
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-  },
-  loadingText: { color: "#94A3B8", fontWeight: "600" },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   listContent: { paddingBottom: 160 },
-
-  /* Post Header Section */
-  mainPostSection: { paddingHorizontal: 20, paddingTop: 20 },
-  topMetaRow: {
+  headerSection: { padding: 24, paddingTop: 20 },
+  metaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  categoryBadge: {
-    backgroundColor: COLORS.primary + "10",
+  badge: {
+    backgroundColor: "#F8FAFC",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
-  categoryLabel: {
-    color: COLORS.primary,
-    fontSize: 11,
+  badgeText: {
+    fontSize: 10,
     fontWeight: "800",
+    color: "#64748B",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-
-  solveBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  headerActions: { flexDirection: "row", gap: 8 },
+  actionIconBtn: {
+    padding: 8,
     borderRadius: 10,
+    backgroundColor: "transparent",
   },
-  solveBtnText: { color: "#10B981", fontWeight: "800", fontSize: 11 },
-
-  solvedPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#DCFCE7",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  solvedPillText: { color: "#166534", fontWeight: "700", fontSize: 11 },
-
-  ultraTitle: {
-    fontSize: 26,
-    fontWeight: "800",
+  titleText: {
+    fontSize: 28,
+    fontWeight: "900",
     color: "#0F172A",
-    lineHeight: 32,
-    marginBottom: 20,
-    letterSpacing: -0.5,
+    lineHeight: 34,
+    marginBottom: 16,
   },
-  authorBar: { marginBottom: 20 },
-  authorLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  mainAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+  authorRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  authorInfo: { flexDirection: "row", alignItems: "center" },
+  smallAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
+    marginRight: 10,
     justifyContent: "center",
     alignItems: "center",
   },
-  mainAvatarText: { color: "#FFF", fontWeight: "700", fontSize: 18 },
-  mainAuthorName: { fontSize: 15, fontWeight: "700", color: "#1E293B" },
-  mainDate: { fontSize: 12, color: "#94A3B8", marginTop: 2 },
-
-  ultraBody: {
-    fontSize: 16,
+  smallAvatarText: { color: "#FFF", fontSize: 12, fontWeight: "bold" },
+  authorNameText: { fontSize: 14, fontWeight: "700", color: "#1E293B" },
+  dotSeparator: { marginHorizontal: 8, color: "#CBD5E1" },
+  timeAgoText: { fontSize: 13, color: "#94A3B8" },
+  bodyText: {
+    fontSize: 17,
     color: "#334155",
-    lineHeight: 25,
-    marginBottom: 24,
+    lineHeight: 26,
+    marginBottom: 28,
   },
-  interactionBar: { flexDirection: "row", gap: 10, marginBottom: 24 },
-  actionPill: {
+  statsBar: { flexDirection: "row", alignItems: "center", gap: 10 },
+  statItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 14,
     paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+  },
+  statItemActive: { backgroundColor: "#FEF2F2" },
+  statText: { fontSize: 14, fontWeight: "700", color: "#64748B" },
+  solveActionBtn: {
+    marginLeft: "auto",
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 12,
   },
-  activeLikePill: { backgroundColor: "#FEF2F2" },
-  pillText: { fontSize: 13, fontWeight: "700", color: "#64748B" },
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginBottom: 20 },
-  convoHeader: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 16,
-  },
-
-  /* Comment UI */
-  commentWrapper: { marginBottom: 12, position: "relative" },
-  connectorLine: {
-    position: "absolute",
-    left: -10,
-    top: 0,
-    bottom: 20,
-    width: 2,
-    backgroundColor: "#E2E8F0",
-    borderBottomLeftRadius: 10,
-  },
-  commentCard: {
-    backgroundColor: "#F8FAFC",
-    padding: 16,
-    borderRadius: 20,
-    borderTopLeftRadius: 4,
-  },
-  expertCardGlow: {
-    backgroundColor: "#FFFDF7",
-    borderColor: "#FDE68A",
-    borderWidth: 1,
-  },
-  authorCardBorder: { borderColor: COLORS.primary + "30", borderWidth: 1 },
-  commentHeader: {
+  solveActionBtnText: { color: "#FFF", fontSize: 13, fontWeight: "800" },
+  solvedBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  miniAvatar: {
-    width: 28,
-    height: 28,
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
+  },
+  solvedText: { fontSize: 12, fontWeight: "800", color: "#10B981" },
+  sectionDivider: { height: 1.5, backgroundColor: "#F8FAFC", marginTop: 32 },
+  commentWrapper: { paddingHorizontal: 20, marginTop: 24 },
+  connectorLine: {
+    position: "absolute",
+    left: -8,
+    top: 0,
+    bottom: 24,
+    width: 2,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 1,
+  },
+  commentCard: { marginBottom: 4 },
+  commentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  commentUserInfo: { flexDirection: "row", gap: 12 },
+  avatarSquircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
-  miniAvatarText: { fontSize: 12, fontWeight: "800" },
-  commentMetaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  commentAuthorName: { fontSize: 14, fontWeight: "700", color: "#1E293B" },
-  proBadge: {
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  proBadgeText: { fontSize: 8, fontWeight: "900", color: "#B45309" },
+  avatarText: { fontSize: 14, fontWeight: "800" },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  commentAuthorName: { fontSize: 14, fontWeight: "800", color: "#1E293B" },
+  commentDate: { fontSize: 12, color: "#94A3B8" },
+  commentActions: { flexDirection: "row", gap: 4 },
   opBadge: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: "#EFF6FF",
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
-  opText: { fontSize: 8, fontWeight: "900", color: "#FFF" },
-  commentDate: { fontSize: 11, color: "#94A3B8" },
-  commentContent: { fontSize: 15, color: "#475569", lineHeight: 22 },
-  commentFooter: { marginTop: 12 },
-  ghostBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
-  ghostBtnText: { fontSize: 12, fontWeight: "800", color: COLORS.primary },
-  emptyText: {
-    textAlign: "center",
-    color: "#94A3B8",
-    marginTop: 40,
-    fontSize: 14,
+  opText: { fontSize: 10, fontWeight: "800", color: COLORS.primary },
+  commentContent: {
+    fontSize: 15,
+    color: "#475569",
+    lineHeight: 22,
+    paddingLeft: 48,
   },
-
-  /* Composer UI */
-  composerContainer: {
+  replyAction: { paddingLeft: 48, marginTop: 12 },
+  replyActionText: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
+  composerWrapper: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     padding: 16,
-    paddingBottom: Platform.OS === "ios" ? 34 : 16,
+    paddingBottom: Platform.OS === "ios" ? 36 : 16,
     borderTopWidth: 1,
-    borderTopColor: "rgba(226, 232, 240, 0.5)",
+    borderTopColor: "#F1F5F9",
   },
-  replyPreview: {
+  inputContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
-    backgroundColor: "#F1F5F9",
-    padding: 10,
-    borderRadius: 12,
-  },
-  replyPreviewText: { fontSize: 12, color: "#475569", flex: 1 },
-  inputRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  inputWrapper: { flex: 1 },
-  modernInput: {
     backgroundColor: "#FFF",
-    borderRadius: 16,
-    paddingHorizontal: 15,
-    height: 48,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  sendBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+  inputField: { flex: 1, fontSize: 15, color: "#1E293B", maxHeight: 100 },
+  sendCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: COLORS.primary,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: COLORS.primary,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { height: 4, width: 0 },
+    marginLeft: 10,
   },
-  disabledSend: { backgroundColor: "#E2E8F0" },
-  lockedInput: {
-    backgroundColor: "#DCFCE7",
-    padding: 14,
-    borderRadius: 12,
+  replyBanner: {
     flexDirection: "row",
-    justifyContent: "center",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 8,
+    marginBottom: 10,
+    paddingHorizontal: 8,
   },
-  lockedText: { color: "#166534", fontWeight: "700", fontSize: 13 },
+  replyBannerText: { fontSize: 12, color: "#64748B" },
+  solvedFooter: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
+  },
+  solvedBlur: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  solvedFooterText: {
+    fontSize: 14,
+    color: "#64748B",
+    fontWeight: "700",
+    marginLeft: 8,
+  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalSheet: {
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingBottom: 44,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  modalHeader: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 20,
+  },
+  modalInput: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 20,
+    padding: 18,
+    minHeight: 180,
+    fontSize: 16,
+    color: "#334155",
+    textAlignVertical: "top",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+    marginTop: 24,
+  },
+  btnPrimary: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 16,
+  },
+  btnSecondary: { paddingHorizontal: 20, paddingVertical: 16 },
 });

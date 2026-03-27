@@ -13,16 +13,15 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 
 import { db } from "../firebase/config";
-import { createNotification } from "./notificationService";
 
-// Consistent reference for the dynamic Bento grid stats
 const STATS_REF = doc(db, "platform_metadata", "global_metrics");
 
 /* ------------------------------------------------
-   CREATE POST
+   POST MANAGEMENT
 ------------------------------------------------ */
 
 export async function createPost({
@@ -36,11 +35,9 @@ export async function createPost({
   const trimmedTitle = title?.trim();
   const trimmedBody = body?.trim();
 
-  if (!trimmedTitle || !trimmedBody) {
+  if (!trimmedTitle || !trimmedBody)
     throw new Error("Title and body are required.");
-  }
 
-  // 1. Create the Post
   const postRef = await addDoc(collection(db, "posts"), {
     authorId,
     authorName,
@@ -56,7 +53,6 @@ export async function createPost({
     updatedAt: serverTimestamp(),
   });
 
-  // 2. DYNAMIC SYNC: Log Activity for the Global Feed
   try {
     await addDoc(collection(db, "activities"), {
       type: "post",
@@ -66,43 +62,62 @@ export async function createPost({
       createdAt: serverTimestamp(),
     });
   } catch (e) {
-    console.log("Activity log failed", e);
-  }
-
-  // 3. Expertise Fan-out Notifications
-  try {
-    const q = query(
-      collection(db, "users"),
-      where("expertise", "array-contains", primaryExpertiseName),
-    );
-
-    const snap = await getDocs(q);
-    const notifications = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((user) => user.id !== authorId)
-      .map((user) =>
-        createNotification({
-          receiverId: user.id,
-          senderId: authorId,
-          title: "New challenge in your field",
-          body: trimmedTitle,
-          postId: postRef.id,
-          type: "matched_expertise_post",
-        }),
-      );
-
-    await Promise.all(notifications);
-  } catch (error) {
-    console.log("Expertise notification error:", error);
+    console.log("Log failed", e);
   }
 
   return postRef.id;
 }
 
+export async function updatePost(postId, updates) {
+  const postRef = doc(db, "posts", postId);
+  await updateDoc(postRef, {
+    ...updates,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePost(postId) {
+  const postRef = doc(db, "posts", postId);
+  const postSnap = await getDoc(postRef);
+
+  if (!postSnap.exists()) return;
+  const postData = postSnap.data();
+  const batch = writeBatch(db);
+
+  // 1. Delete all comments associated with this post
+  const commentsQuery = query(
+    collection(db, "comments"),
+    where("postId", "==", postId),
+  );
+  const commentsSnap = await getDocs(commentsQuery);
+  commentsSnap.forEach((d) => batch.delete(d.ref));
+
+  // 2. Delete all likes associated with this post
+  const likesQuery = query(
+    collection(db, "postLikes"),
+    where("postId", "==", postId),
+  );
+  const likesSnap = await getDocs(likesQuery);
+  likesSnap.forEach((d) => batch.delete(d.ref));
+
+  // 3. Delete the post itself
+  batch.delete(postRef);
+
+  // 4. Update Stats
+  batch.update(STATS_REF, {
+    collabCount: increment(-(postData.commentsCount || 0)),
+    ...(postData.solved && { solvedCount: increment(-1) }),
+  });
+
+  await batch.commit();
+  return true;
+}
+
 /* ------------------------------------------------
-   POSTS SUBSCRIPTIONS
+   SUBSCRIPTIONS
 ------------------------------------------------ */
 
+// For Global Feed
 export function subscribePosts(callback) {
   const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -114,78 +129,17 @@ export function subscribePosts(callback) {
   });
 }
 
+// For Details Screen
 export function subscribePost(postId, callback) {
-  return onSnapshot(doc(db, "posts", postId), (snap) => {
+  const postRef = doc(db, "posts", postId);
+  return onSnapshot(postRef, (snap) => {
     if (snap.exists()) {
       callback({ id: snap.id, ...snap.data() });
+    } else {
+      callback(null);
     }
   });
 }
-
-/* ------------------------------------------------
-   COMMENTS + REPLIES
------------------------------------------------- */
-
-export async function addComment({
-  postId,
-  authorId,
-  authorName,
-  body,
-  parentId = null,
-}) {
-  const trimmedBody = body?.trim();
-  if (!trimmedBody) throw new Error("Comment cannot be empty.");
-
-  const postRef = doc(db, "posts", postId);
-  const postSnap = await getDoc(postRef);
-
-  if (!postSnap.exists()) throw new Error("Post not found.");
-  const post = postSnap.data();
-  if (post.solved) throw new Error("This discussion is closed.");
-
-  // 1. Add Comment
-  const commentRef = await addDoc(collection(db, "comments"), {
-    postId,
-    authorId,
-    authorName,
-    body: trimmedBody,
-    parentId,
-    createdAt: serverTimestamp(),
-  });
-
-  // 2. DYNAMIC SYNC: Update Local Post and Global Collaboration Count
-  try {
-    await updateDoc(postRef, {
-      commentsCount: increment(1),
-      updatedAt: serverTimestamp(),
-    });
-
-    // Update the "Collabs" box on the Home Screen
-    await updateDoc(STATS_REF, {
-      collabCount: increment(1),
-    });
-  } catch (err) {
-    console.warn("Global stats update failed:", err);
-  }
-
-  // 3. Notifications logic
-  if (!parentId && post.authorId !== authorId) {
-    await createNotification({
-      receiverId: post.authorId,
-      senderId: authorId,
-      title: "New feedback on your request",
-      body: trimmedBody.slice(0, 50),
-      postId,
-      type: "comment_on_post",
-    });
-  }
-
-  return commentRef.id;
-}
-
-/* ------------------------------------------------
-   SUBSCRIPTIONS & UTILS
------------------------------------------------- */
 
 export function subscribeComments(postId, callback) {
   const q = query(
@@ -196,6 +150,90 @@ export function subscribeComments(postId, callback) {
   return onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
+}
+
+/* ------------------------------------------------
+   COMMENTS & REPLIES
+------------------------------------------------ */
+
+export async function addComment({
+  postId,
+  authorId,
+  authorName,
+  body,
+  parentId = null,
+}) {
+  const trimmedBody = body?.trim();
+  if (!trimmedBody) throw new Error("Empty comment.");
+
+  const postRef = doc(db, "posts", postId);
+  const postSnap = await getDoc(postRef);
+  if (!postSnap.exists()) throw new Error("Post not found.");
+  if (postSnap.data().solved) throw new Error("Discussion is closed.");
+
+  const commentRef = await addDoc(collection(db, "comments"), {
+    postId,
+    authorId,
+    authorName,
+    body: trimmedBody,
+    parentId,
+    createdAt: serverTimestamp(),
+  });
+
+  const batch = writeBatch(db);
+  batch.update(postRef, {
+    commentsCount: increment(1),
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(STATS_REF, { collabCount: increment(1) });
+  await batch.commit();
+
+  return commentRef.id;
+}
+
+export async function updateComment(commentId, newBody) {
+  const commentRef = doc(db, "comments", commentId);
+  await updateDoc(commentRef, {
+    body: newBody.trim(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteComment(postId, commentId) {
+  const batch = writeBatch(db);
+
+  const allCommentsQuery = query(
+    collection(db, "comments"),
+    where("postId", "==", postId),
+  );
+  const snap = await getDocs(allCommentsQuery);
+  const allComments = snap.docs.map((d) => ({
+    id: d.id,
+    parentId: d.parentId,
+    ref: d.ref,
+  }));
+
+  const toDeleteRefs = [];
+
+  const findChildren = (id) => {
+    const target = allComments.find((c) => c.id === id);
+    if (!target) return;
+
+    toDeleteRefs.push(target.ref);
+    allComments
+      .filter((c) => c.parentId === id)
+      .forEach((child) => findChildren(child.id));
+  };
+
+  findChildren(commentId);
+
+  const count = toDeleteRefs.length;
+  toDeleteRefs.forEach((ref) => batch.delete(ref));
+
+  batch.update(doc(db, "posts", postId), { commentsCount: increment(-count) });
+  batch.update(STATS_REF, { collabCount: increment(-count) });
+
+  await batch.commit();
 }
 
 export function buildCommentTree(comments) {
@@ -212,7 +250,7 @@ export function buildCommentTree(comments) {
 }
 
 /* ------------------------------------------------
-   LIKES
+   LIKES & SOLVE
 ------------------------------------------------ */
 
 export async function toggleLikePost(postId, userId) {
@@ -238,43 +276,17 @@ export function subscribeIsPostLiked(postId, userId, callback) {
   });
 }
 
-/* ------------------------------------------------
-   MARK POST SOLVED
------------------------------------------------- */
-
 export async function markPostSolved(postId) {
   const postRef = doc(db, "posts", postId);
   const postSnap = await getDoc(postRef);
+  if (!postSnap.exists() || postSnap.data().solved) return;
 
-  if (!postSnap.exists()) return;
-  const postData = postSnap.data();
-
-  // 1. Update the Post Status
-  await updateDoc(postRef, {
+  const batch = writeBatch(db);
+  batch.update(postRef, {
     solved: true,
     status: "solved",
     updatedAt: serverTimestamp(),
   });
-
-  // 2. DYNAMIC SYNC: Increment the "Solved" count on Home Screen
-  try {
-    await updateDoc(STATS_REF, {
-      solvedCount: increment(1),
-    });
-  } catch (err) {
-    console.error("Stats solvedCount sync failed:", err);
-  }
-
-  // 3. LOG ACTIVITY: Broadcast the success to the Live Updates feed
-  try {
-    await addDoc(collection(db, "activities"), {
-      type: "solved",
-      category: postData.primaryExpertiseName || "Success",
-      message: `Success! ${postData.authorName}'s challenge was marked Solved.`,
-      postId: postId,
-      createdAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.log("Activity log failed", err);
-  }
+  batch.update(STATS_REF, { solvedCount: increment(1) });
+  await batch.commit();
 }

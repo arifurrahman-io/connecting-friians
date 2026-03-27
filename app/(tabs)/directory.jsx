@@ -15,13 +15,13 @@ import AppScreen from "../../src/components/AppScreen";
 import { subscribeUsers } from "../../src/services/userService";
 import { COLORS } from "../../src/theme/colors";
 
+// --- SUB-COMPONENT: ALUMNI CARD ---
 function AlumniCard({ item, onPress }) {
   const avatarLetter = (item.fullName || "F")[0].toUpperCase();
   const expertiseList = Array.isArray(item.expertise)
     ? item.expertise.slice(0, 2)
     : [];
 
-  // Dynamic color logic
   const bgColors = ["#6366F1", "#EC4899", "#8B5CF6", "#10B981", "#F59E0B"];
   const bgColor = bgColors[avatarLetter.charCodeAt(0) % bgColors.length];
 
@@ -79,6 +79,7 @@ function AlumniCard({ item, onPress }) {
   );
 }
 
+// --- MAIN DIRECTORY SCREEN ---
 export default function DirectoryScreen() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
@@ -90,21 +91,30 @@ export default function DirectoryScreen() {
 
   const filteredUsers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    if (!keyword) return users;
-    return users.filter((u) => {
+
+    // 1. First, filter out blocked or banned users
+    const activeUsers = users.filter(
+      (u) => u.status !== "blocked" && u.status !== "banned",
+    );
+
+    // 2. Then, apply search keyword filtering
+    if (!keyword) return activeUsers;
+
+    return activeUsers.filter((u) => {
       const name = (u.fullName || "").toLowerCase();
       const exp = (u.expertise || []).join(" ").toLowerCase();
+      const year = String(u.sscYear || "");
+
       return (
         name.includes(keyword) ||
         exp.includes(keyword) ||
-        String(u.sscYear).includes(keyword)
+        year.includes(keyword)
       );
     });
   }, [users, search]);
 
   return (
     <AppScreen backgroundColor="#FDFDFD">
-      {/* Fixed Header Section */}
       <View style={styles.fixedHeader}>
         <View style={styles.headerTop}>
           <View>
@@ -130,7 +140,6 @@ export default function DirectoryScreen() {
         </View>
       </View>
 
-      {/* Scrollable List Area */}
       <FlatList
         data={filteredUsers}
         keyExtractor={(item) => item.id}
@@ -142,14 +151,24 @@ export default function DirectoryScreen() {
         )}
         contentContainerStyle={styles.listPadding}
         showsVerticalScrollIndicator={false}
-        // Optimize scrolling performance
         removeClippedSubviews={true}
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         ListHeaderComponent={
-          <Text style={styles.countText}>
-            {filteredUsers.length} Professionals Found
-          </Text>
+          filteredUsers.length > 0 ? (
+            <Text style={styles.countText}>
+              {filteredUsers.length} Professionals Found
+            </Text>
+          ) : null
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="people-outline" size={48} color="#CBD5E1" />
+            <Text style={styles.emptyTitle}>No Members Found</Text>
+            <Text style={styles.emptySubtitle}>
+              Try adjusting your search or filters.
+            </Text>
+          </View>
         }
       />
     </AppScreen>
@@ -181,23 +200,13 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     letterSpacing: -0.5,
   },
-  filterBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F1F5F9",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 12,
-    height: 46,
+    height: 48,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     marginBottom: 8,
@@ -214,23 +223,24 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   countText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
     color: "#94A3B8",
-    marginBottom: 12,
+    marginBottom: 16,
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 8,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
     elevation: 2,
   },
   cardContent: {
@@ -238,25 +248,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarFrame: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
+    width: 54,
+    height: 54,
+    borderRadius: 16,
     padding: 3,
   },
   innerAvatar: {
     flex: 1,
-    borderRadius: 11,
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
   },
   avatarText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
   },
   mainInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 14,
   },
   nameRow: {
     flexDirection: "row",
@@ -265,26 +275,28 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   name: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     color: "#1E293B",
     flex: 1,
   },
   batchBadge: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   batchText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#475569",
+    color: "#64748B",
   },
   detailsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   detailText: {
     fontSize: 12,
@@ -297,19 +309,38 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tag: {
-    backgroundColor: COLORS.primary + "10",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    backgroundColor: COLORS.primary + "12",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   tagText: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     color: COLORS.primary,
   },
   moreText: {
     fontSize: 10,
     color: "#94A3B8",
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#475569",
+    marginTop: 16,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#94A3B8",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 20,
   },
 });

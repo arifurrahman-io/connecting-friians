@@ -1,7 +1,7 @@
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { auth, db } from "../firebase/config";
+import { auth, db } from "../firebase/config"; // Verified path
 import { getUserProfile } from "../services/userService";
 
 const AuthContext = createContext(null);
@@ -15,10 +15,11 @@ export function AuthProvider({ children }) {
     let unsubscribeProfile = null;
 
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+      // 1. Set the Firebase Auth User
       setUser(currentUser || null);
 
       if (currentUser) {
-        // 1. Initial Fetch for fast loading
+        // 2. Initial Fetch for fast loading (Better UX)
         try {
           const data = await getUserProfile(currentUser.uid);
           setProfile(data);
@@ -26,13 +27,15 @@ export function AuthProvider({ children }) {
           console.error("AuthContext: Initial profile fetch failed", err);
         }
 
-        // 2. DYNAMIC SYNC: Listen for real-time profile changes (Header, Avatar, etc.)
-        // This makes your UI "Dynamic from header to footer" as requested.
+        // 3. DYNAMIC SYNC: Listen for real-time changes
+        // This ensures if you change a role in Firebase, the UI updates INSTANTLY.
         unsubscribeProfile = onSnapshot(
           doc(db, "users", currentUser.uid),
           (docSnap) => {
             if (docSnap.exists()) {
-              setProfile(docSnap.data());
+              const data = docSnap.data();
+              setProfile(data);
+              console.log("🔥 Profile Synced:", data.role); // Debugging role
             }
           },
           (err) => console.warn("Profile listener error:", err),
@@ -40,22 +43,21 @@ export function AuthProvider({ children }) {
       } else {
         // Clear state on logout
         setProfile(null);
-        if (unsubscribeProfile) unsubscribeProfile();
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+          unsubscribeProfile = null;
+        }
       }
 
       setLoading(false);
     });
 
-    // Cleanup both listeners on unmount
     return () => {
       unsubAuth();
       if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
 
-  /**
-   * Manually trigger a profile refresh if needed.
-   */
   const refreshProfile = async () => {
     if (!auth.currentUser) return;
     try {
@@ -66,14 +68,15 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Optimization: Memoize the value to prevent unnecessary re-renders of the entire app tree
   const value = useMemo(
     () => ({
       user,
-      profile,
+      profile, // This contains your 'role'
       loading,
       refreshProfile,
-      isAuthenticated: !!user && user.emailVerified, // Helper for easy gatekeeping
+      // Fixed: Check both user and profile for admin status
+      isAdmin: profile?.role === "admin",
+      isAuthenticated: !!user,
     }),
     [user, profile, loading],
   );

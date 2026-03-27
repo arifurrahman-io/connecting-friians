@@ -20,6 +20,11 @@ import Animated, {
   FadeOut,
 } from "react-native-reanimated";
 
+// Firebase Imports for the Ban Check
+import { signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../../src/firebase/config";
+
 import InputField from "../../src/components/InputField";
 import PrimaryButton from "../../src/components/PrimaryButton";
 import { loginUser } from "../../src/services/authService";
@@ -27,7 +32,6 @@ import { COLORS } from "../../src/theme/colors";
 
 const { width } = Dimensions.get("window");
 
-// --- PLATFORM SAFE STORAGE HELPER ---
 const storage = {
   getItem: async (key) => {
     if (Platform.OS === "web") return localStorage.getItem(key);
@@ -52,6 +56,7 @@ export default function LoginScreen() {
     visible: false,
     message: "",
     type: "success",
+    long: false, // Added for the ban message
   });
 
   useEffect(() => {
@@ -69,14 +74,18 @@ export default function LoginScreen() {
     checkSavedEmail();
   }, []);
 
-  const showToast = (message, type = "success") => {
-    setToast({ visible: true, message, type });
+  const showToast = (message, type = "success", isLong = false) => {
+    setToast({ visible: true, message, type, long: isLong });
     if (Platform.OS !== "web") {
       type === "success"
         ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
         : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-    setTimeout(() => setToast((prev) => ({ ...prev, visible: false })), 3000);
+    // Ban messages stay longer (8 seconds) so users can read the email
+    setTimeout(
+      () => setToast((prev) => ({ ...prev, visible: false })),
+      isLong ? 8000 : 3000,
+    );
   };
 
   const handleLogin = async () => {
@@ -90,8 +99,31 @@ export default function LoginScreen() {
       if (Platform.OS !== "web")
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      await loginUser(email, password);
+      // 1. Perform standard Auth Login
+      const userCredential = await loginUser(email, password);
+      const user = userCredential.user;
 
+      // 2. FETCH PROFILE TO CHECK BAN STATUS
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+
+        if (userData.status === "banned" || userData.isBlocked === true) {
+          // Immediately sign out so the NavigationGuard doesn't let them in
+          await signOut(auth);
+
+          showToast(
+            "Account Banned: Please contact arifurrahman.now@gmail.com to appeal.",
+            "error",
+            true,
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. SUCCESS LOGIC
       if (rememberMe) {
         await storage.setItem("user_email", email.trim());
       } else {
@@ -101,10 +133,11 @@ export default function LoginScreen() {
       showToast("Welcome back!", "success");
       setTimeout(() => router.replace("/(tabs)"), 1000);
     } catch (error) {
+      console.log(error);
       const errorMsg =
         error.code === "auth/invalid-credential"
           ? "Invalid credentials"
-          : "Login failed";
+          : "Login failed. Check your connection.";
       showToast(errorMsg, "error");
     } finally {
       setLoading(false);
@@ -124,6 +157,7 @@ export default function LoginScreen() {
             styles.toast,
             {
               backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444",
+              height: toast.long ? "auto" : 54, // Adjust height for long ban text
             },
           ]}
         >
@@ -131,7 +165,7 @@ export default function LoginScreen() {
             name={
               toast.type === "success" ? "checkmark-circle" : "alert-circle"
             }
-            size={18}
+            size={20}
             color="#fff"
           />
           <Text style={styles.toastText}>{toast.message}</Text>
@@ -320,15 +354,19 @@ const styles = StyleSheet.create({
   footerAction: { fontSize: 14, color: COLORS.primary, fontWeight: "800" },
   toast: {
     position: "absolute",
-    top: 50,
+    top: 60,
     left: 20,
     right: 20,
     zIndex: 100,
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    gap: 10,
+    padding: 16,
+    borderRadius: 16,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  toastText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  toastText: { color: "#fff", fontSize: 13, fontWeight: "700", flex: 1 },
 });

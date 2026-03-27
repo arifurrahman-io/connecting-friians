@@ -1,33 +1,64 @@
 import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { signOut } from "firebase/auth";
 import { useEffect } from "react";
+import Toast from "react-native-toast-message";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
+import { auth } from "../src/firebase/config"; // Ensure auth is imported
 
 /**
- * NavigationGuard handles the Auto-Login logic.
- * It monitors the Auth state and moves the user to the correct group.
+ * NavigationGuard handles Auto-Login, Admin Protection, and Ban Enforcement.
  */
 function NavigationGuard() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading, isAdmin } = useAuth();
   const segments = useSegments();
 
   useEffect(() => {
     if (loading) return;
 
-    // Check if the user is currently in a public or private route
     const inAuthGroup = segments[0] === "(public)";
+    const inAdminTab = segments[1] === "adminDashboard";
 
-    if (!user && !inAuthGroup) {
-      // 1. If not logged in and trying to access private pages -> redirect to Login
+    // 1. BAN ENFORCEMENT (The "Real-Time Kick")
+    // If the user is authenticated but their Firestore profile is banned/blocked
+    if (user && (profile?.status === "banned" || profile?.isBlocked === true)) {
+      signOut(auth); // Kill the session
+
+      Toast.show({
+        type: "error",
+        text1: "Account Restricted",
+        text2: "Contact: arifurrahman.now@gmail.com",
+        visibilityTime: 6000,
+        autoHide: true,
+      });
+
+      // Move them back to login immediately
       router.replace("/(public)/login");
-    } else if (user && inAuthGroup) {
-      // 2. If logged in and trying to access login/register -> redirect to Home
-      // Note: Only redirect if email is verified (optional based on your flow)
-      if (user.emailVerified) {
+      return;
+    }
+
+    // 2. GUEST ACCESS: Redirect to Login if not authenticated
+    if (!user && !inAuthGroup) {
+      router.replace("/(public)/login");
+    }
+
+    // 3. LOGGED IN: Move from Login to Main App
+    else if (user && inAuthGroup) {
+      if (user.emailVerified || user) {
         router.replace("/(tabs)");
       }
     }
-  }, [user, loading, segments]);
+
+    // 4. ADMIN PROTECTION: Kick non-admins out of the admin panel
+    if (user && inAdminTab && !isAdmin) {
+      router.replace("/(tabs)");
+      Toast.show({
+        type: "error",
+        text1: "Access Denied",
+        text2: "You do not have permission to view this area.",
+      });
+    }
+  }, [user, profile, loading, segments, isAdmin]);
 
   return (
     <Stack
@@ -37,28 +68,26 @@ function NavigationGuard() {
         headerShadowVisible: false,
         headerTitleStyle: {
           fontSize: 18,
-          fontWeight: "800",
-          color: "#1E293B",
+          fontWeight: "900",
+          color: "#0F172A",
         },
         headerStyle: {
           backgroundColor: "#FFFFFF",
         },
-        headerTintColor: "#1E293B",
+        headerTintColor: "#0F172A",
         headerBackTitleVisible: false,
+        headerTitleAlign: "center",
       }}
     >
-      {/* Group Routes */}
-      <Stack.Screen name="(public)" />
-      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(public)" options={{ animation: "fade" }} />
+      <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
 
-      {/* Standalone Screens */}
       <Stack.Screen
         name="post/[id]"
         options={{
           headerShown: true,
           title: "Problem Details",
           presentation: "card",
-          headerTitleAlign: "center",
         }}
       />
 
@@ -66,9 +95,8 @@ function NavigationGuard() {
         name="user/[id]"
         options={{
           headerShown: true,
-          title: "Alumni Profile",
+          title: "Profile View",
           presentation: "card",
-          headerTitleAlign: "center",
         }}
       />
 
@@ -89,6 +117,8 @@ export default function RootLayout() {
     <AuthProvider>
       <StatusBar style="dark" />
       <NavigationGuard />
+      {/* Toast must be here to be visible across all screens */}
+      <Toast />
     </AuthProvider>
   );
 }

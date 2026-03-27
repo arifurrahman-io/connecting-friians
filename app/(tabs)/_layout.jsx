@@ -7,20 +7,18 @@ import { useAuth } from "../../src/context/AuthContext";
 import { COLORS } from "../../src/theme/colors";
 
 export default function TabLayout() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const insets = useSafeAreaInsets();
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="small" color={COLORS.primary} />
       </View>
     );
   }
 
-  if (!user) {
-    return <Redirect href="/(public)/login" />;
-  }
+  if (!user) return <Redirect href="/(public)/login" />;
 
   return (
     <Tabs
@@ -32,18 +30,13 @@ export default function TabLayout() {
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabLabel,
         tabBarStyle: {
-          // ATTACHED TO BOTTOM LOGIC
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: Platform.OS === "ios" ? 88 : 68, // Taller for iOS home indicator
+          height: Platform.OS === "ios" ? 88 : 70,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
           borderTopColor: "#F1F5F9",
-          elevation: 0, // Remove Android shadow for a flatter, modern look
-          paddingBottom: Platform.OS === "ios" ? insets.bottom + 40 : 70,
           paddingTop: 12,
+          paddingBottom: Platform.OS === "ios" ? insets.bottom : 12,
+          elevation: 0,
         },
       }}
     >
@@ -75,14 +68,23 @@ export default function TabLayout() {
         }}
       />
 
+      {/* ALIGNED CENTER ACTION */}
       <Tabs.Screen
         name="create-post"
         options={{
-          title: "",
-          tabBarLabel: () => null,
-          tabBarIcon: () => (
-            <View style={styles.centerAction}>
-              <Ionicons name="code" size={32} color="#fff" />
+          title: "Post",
+          tabBarIcon: ({ color, focused }) => (
+            <View
+              style={[
+                styles.actionIcon,
+                { backgroundColor: focused ? COLORS.primary : "#F1F5F9" },
+              ]}
+            >
+              <Ionicons
+                name="add"
+                size={24}
+                color={focused ? "#FFF" : "#64748B"}
+              />
             </View>
           ),
         }}
@@ -102,6 +104,23 @@ export default function TabLayout() {
         }}
       />
 
+      {/* ADMIN DASHBOARD */}
+      <Tabs.Screen
+        name="adminDashboard"
+        options={{
+          title: "Admin",
+          href: isAdmin ? "/adminDashboard" : null,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "shield-checkmark" : "shield-checkmark-outline"}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* PROFILE TAB */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -116,6 +135,7 @@ export default function TabLayout() {
         }}
       />
 
+      {/* Hidden Screens */}
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
@@ -126,31 +146,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 4,
-    paddingBottom: 0,
+    fontWeight: "700",
+    textTransform: "capitalize",
+    marginTop: 2,
   },
-  centerAction: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: COLORS.primary,
+  actionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    // Lifted slightly but remains within the bar context
-    marginTop: Platform.OS === "ios" ? -10 : -15,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 2,
-    borderColor: "#FFF",
   },
 });
