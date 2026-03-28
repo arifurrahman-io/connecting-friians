@@ -1,5 +1,7 @@
+import * as Linking from "expo-linking";
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   query,
@@ -13,14 +15,18 @@ import { db } from "../firebase/config";
 export const AdminService = {
   /**
    * DYNAMIC CONTENT REMOVAL
-   * Automatically detects if the target is a post, comment, or user
+   * Automatically detects if the target is a post, comment, user, or feedback
    */
   deleteReportedContent: async (report) => {
     const { targetId, targetType, id: reportId } = report;
     const batch = writeBatch(db);
 
     // 1. Delete the actual content based on type
-    const contentRef = doc(db, `${targetType}s`, targetId); // pluralizes 'post' to 'posts'
+    // Handles 'post' -> 'posts', 'comment' -> 'comments', 'feedback' -> 'feedback'
+    const collectionName = targetType.endsWith("s")
+      ? targetType
+      : `${targetType}s`;
+    const contentRef = doc(db, collectionName, targetId);
     batch.delete(contentRef);
 
     // 2. Mark the report as resolved
@@ -42,6 +48,25 @@ export const AdminService = {
     });
 
     await batch.commit();
+  },
+
+  /**
+   * USER OPINION / FEEDBACK MANAGEMENT
+   */
+
+  // Delete a specific feedback entry
+  deleteFeedback: async (feedbackId) => {
+    const feedbackRef = doc(db, "feedback", feedbackId);
+    await deleteDoc(feedbackRef);
+  },
+
+  // Helper to reply via Email directly from Dashboard
+  replyToUser: (email, userName, originalMessage) => {
+    const subject = encodeURIComponent("Response to your FRIIANS Feedback");
+    const body = encodeURIComponent(
+      `Hello ${userName},\n\nThank you for your feedback: "${originalMessage}"\n\n---\nAdmin Response:\n`,
+    );
+    Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
   },
 
   /**
@@ -74,10 +99,12 @@ export const AdminService = {
   // Clean sweep of a spammer's content
   deleteAllUserContent: async (userId) => {
     const batch = writeBatch(db);
-    const collections = ["posts", "comments"];
+    const collections = ["posts", "comments", "feedback"];
 
     for (const col of collections) {
-      const q = query(collection(db, col), where("userId", "==", userId));
+      // Note: Filter field is authorId in posts/comments, but uid in feedback
+      const field = col === "feedback" ? "uid" : "authorId";
+      const q = query(collection(db, col), where(field, "==", userId));
       const snapshot = await getDocs(q);
       snapshot.forEach((d) => batch.delete(doc(db, col, d.id)));
     }
@@ -102,8 +129,6 @@ export const AdminService = {
   // Warn User
   warnUser: async (userId, reason) => {
     const userRef = doc(db, "users", userId);
-    // Note: incrementing on client-side requires the current count
-    // For a more dynamic feel, we use a generic flag
     await updateDoc(userRef, {
       hasWarning: true,
       lastWarningReason: reason,

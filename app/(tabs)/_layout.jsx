@@ -7,7 +7,9 @@ import { useAuth } from "../../src/context/AuthContext";
 import { COLORS } from "../../src/theme/colors";
 
 export default function TabLayout() {
-  const { user, loading, isAdmin } = useAuth();
+  // Destructuring isAuthenticated and isEmailVerified from our updated AuthContext
+  const { user, loading, isAdmin, isAuthenticated, isEmailVerified } =
+    useAuth();
   const insets = useSafeAreaInsets();
 
   if (loading) {
@@ -18,7 +20,17 @@ export default function TabLayout() {
     );
   }
 
+  // --- AUTHENTICATION GATE ---
+  // 1. If no user is logged in, go to login
   if (!user) return <Redirect href="/(public)/login" />;
+
+  // 2. If user exists but email isn't verified, go to verification screen
+  // This prevents unverified users from seeing the bottom tabs
+  if (!isEmailVerified) return <Redirect href="/verify-email" />;
+
+  // Dynamic height calculation to handle system navigation bars
+  const TAB_BAR_HEIGHT =
+    Platform.OS === "ios" ? 60 + insets.bottom : 68 + insets.bottom;
 
   return (
     <Tabs
@@ -30,13 +42,15 @@ export default function TabLayout() {
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabLabel,
         tabBarStyle: {
-          height: Platform.OS === "ios" ? 88 : 70,
+          height: TAB_BAR_HEIGHT,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
           borderTopColor: "#F1F5F9",
           paddingTop: 12,
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 12,
+          // Prevents overlapping with Android navigation buttons or iOS home bar
+          paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12,
           elevation: 0,
+          shadowOpacity: 0,
         },
       }}
     >
@@ -68,12 +82,12 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ALIGNED CENTER ACTION */}
+      {/* CENTER ACTION BUTTON */}
       <Tabs.Screen
         name="create-post"
         options={{
           title: "Post",
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <View
               style={[
                 styles.actionIcon,
@@ -104,11 +118,11 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ADMIN DASHBOARD */}
       <Tabs.Screen
         name="adminDashboard"
         options={{
           title: "Admin",
+          // Only show Admin tab if the profile role is 'admin'
           href: isAdmin ? "/adminDashboard" : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -120,7 +134,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* PROFILE TAB */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -135,7 +148,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Hidden Screens */}
+      {/* Internal Screens Hidden from Tab Bar */}
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
@@ -150,15 +163,16 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "capitalize",
-    marginTop: 2,
+    marginTop: 4,
   },
   actionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 14, // Squircle style
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: Platform.OS === "android" ? 4 : 0,
   },
 });

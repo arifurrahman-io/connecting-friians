@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { useMemo, useState } from "react";
+import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -13,11 +16,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Toast from "react-native-toast-message";
 import AppScreen from "../../src/components/AppScreen";
 import InputField from "../../src/components/InputField";
 import PrimaryButton from "../../src/components/PrimaryButton";
 import { useAuth } from "../../src/context/AuthContext";
-import { EXPERTISE_OPTIONS } from "../../src/data/expertise";
+import { ExpertiseService } from "../../src/services/ExpertiseService"; // New Dynamic Service
 import { createPost } from "../../src/services/postService";
 import { COLORS } from "../../src/theme/colors";
 
@@ -30,21 +34,35 @@ export default function CreatePostScreen() {
   const [selectedExpertise, setSelectedExpertise] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Dynamic Expertise States
+  const [expertiseOptions, setExpertiseOptions] = useState([]);
+  const [catsLoading, setCatsLoading] = useState(true);
+
   // Search Modal States
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Logic: Show top 7 categories + an "Ellipsis" icon.
-  // If user selects something from search that isn't in top 7, we swap it in.
+  // Fetch Dynamic Categories from Firestore
+  useEffect(() => {
+    const unsub = ExpertiseService.subscribeCategories((data) => {
+      // Map Firestore objects to just names for the UI chips
+      const names = data.map((cat) => cat.name);
+      setExpertiseOptions(names);
+      setCatsLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  // Logic: Dynamic chip selection from Firestore data
   const visibleOptions = useMemo(() => {
-    const defaultSelection = EXPERTISE_OPTIONS.slice(0, 7);
+    const defaultSelection = expertiseOptions.slice(0, 7);
     if (selectedExpertise && !defaultSelection.includes(selectedExpertise)) {
-      return [selectedExpertise, ...EXPERTISE_OPTIONS.slice(0, 6)];
+      return [selectedExpertise, ...expertiseOptions.slice(0, 6)];
     }
     return defaultSelection;
-  }, [selectedExpertise]);
+  }, [selectedExpertise, expertiseOptions]);
 
-  const filteredOptions = EXPERTISE_OPTIONS.filter((opt) =>
+  const filteredOptions = expertiseOptions.filter((opt) =>
     opt.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
@@ -73,12 +91,30 @@ export default function CreatePostScreen() {
         primaryExpertiseId: expertiseId,
       });
 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      Toast.show({
+        type: "success",
+        text1: "Post Published! 🚀",
+        text2: "Your request is now live on the feed.",
+        position: "top",
+        visibilityTime: 2500,
+      });
+
       setTitle("");
       setBody("");
       setSelectedExpertise("");
-      Alert.alert("Published", "Your help request is now live!");
+
+      setTimeout(() => {
+        router.push("/feed");
+      }, 600);
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.error(error);
+      Toast.show({
+        type: "error",
+        text1: "Publishing Failed",
+        text2: error.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -95,7 +131,7 @@ export default function CreatePostScreen() {
           contentContainerStyle={styles.scrollContent}
           bounces={false}
         >
-          {/* MODERN HEADER */}
+          {/* HEADER */}
           <View style={styles.headerSection}>
             <LinearGradient
               colors={["#EEF2FF", "#F8FAFC"]}
@@ -115,7 +151,6 @@ export default function CreatePostScreen() {
           </View>
 
           <View style={styles.formContainer}>
-            {/* PROBLEM DETAILS */}
             <View style={styles.sectionCard}>
               <Text style={styles.cardLabel}>Problem Title</Text>
               <InputField
@@ -123,6 +158,7 @@ export default function CreatePostScreen() {
                 onChangeText={setTitle}
                 placeholder="e.g. Need advice on BCS preparation"
                 containerStyle={styles.noMarginInput}
+                maxLength={120}
               />
               <Text style={styles.charCount}>{title.length}/120</Text>
 
@@ -136,11 +172,12 @@ export default function CreatePostScreen() {
                 multiline
                 numberOfLines={5}
                 containerStyle={styles.noMarginInput}
+                maxLength={3000}
               />
               <Text style={styles.charCount}>{body.length}/3000</Text>
             </View>
 
-            {/* CATEGORY SELECTOR */}
+            {/* DYNAMIC CATEGORY SELECTOR */}
             <View style={styles.expertiseSection}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.cardLabel}>Category</Text>
@@ -149,40 +186,47 @@ export default function CreatePostScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.chipGrid}>
-                {visibleOptions.map((item) => {
-                  const isActive = selectedExpertise === item;
-                  return (
-                    <TouchableOpacity
-                      key={item}
-                      onPress={() => setSelectedExpertise(item)}
-                      style={[
-                        styles.skillChip,
-                        isActive && styles.skillChipActive,
-                      ]}
-                    >
-                      <Text
+              {catsLoading ? (
+                <ActivityIndicator
+                  color={COLORS.primary}
+                  style={{ alignSelf: "flex-start" }}
+                />
+              ) : (
+                <View style={styles.chipGrid}>
+                  {visibleOptions.map((item) => {
+                    const isActive = selectedExpertise === item;
+                    return (
+                      <TouchableOpacity
+                        key={item}
+                        onPress={() => setSelectedExpertise(item)}
                         style={[
-                          styles.skillText,
-                          isActive && styles.skillTextActive,
+                          styles.skillChip,
+                          isActive && styles.skillChipActive,
                         ]}
                       >
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <TouchableOpacity
-                  style={styles.moreChip}
-                  onPress={() => setModalVisible(true)}
-                >
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={18}
-                    color={COLORS.primary}
-                  />
-                </TouchableOpacity>
-              </View>
+                        <Text
+                          style={[
+                            styles.skillText,
+                            isActive && styles.skillTextActive,
+                          ]}
+                        >
+                          {item}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity
+                    style={styles.moreChip}
+                    onPress={() => setModalVisible(true)}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={18}
+                      color={COLORS.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             {/* ACTION CARD */}
@@ -239,10 +283,7 @@ export default function CreatePostScreen() {
               />
             </View>
 
-            <ScrollView
-              contentContainerStyle={styles.modalScroll}
-              showsVerticalScrollIndicator={false}
-            >
+            <ScrollView contentContainerStyle={styles.modalScroll}>
               <View style={styles.modalChipGrid}>
                 {filteredOptions.map((item) => (
                   <TouchableOpacity
@@ -272,14 +313,15 @@ export default function CreatePostScreen() {
           </View>
         </View>
       </Modal>
+      <Toast />
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingBottom: 40 },
+  scrollContent: { paddingBottom: 20 },
   headerSection: {
-    paddingTop: 60,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingBottom: 30,
     paddingHorizontal: 20,
     backgroundColor: "#fff",
@@ -307,7 +349,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 2,
   },
-  formContainer: { paddingHorizontal: 0, marginTop: 20 },
+  formContainer: { paddingHorizontal: 16, marginTop: 20 },
   sectionCard: {
     backgroundColor: "#fff",
     borderRadius: 24,
@@ -326,8 +368,6 @@ const styles = StyleSheet.create({
   noMarginInput: { marginBottom: 4 },
   charCount: { fontSize: 11, color: "#CBD5E1", textAlign: "right" },
   spacer: { height: 20 },
-
-  // Expertise Section
   expertiseSection: { marginTop: 20 },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -360,8 +400,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  // Action Button Card
   publishAction: {
     marginTop: 25,
     borderRadius: 24,
@@ -380,8 +418,6 @@ const styles = StyleSheet.create({
   },
   highlightText: { fontWeight: "700", color: COLORS.primary },
   mainBtn: { borderRadius: 16, height: 56 },
-
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.6)",

@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   StatusBar,
@@ -17,17 +18,46 @@ import PostCard from "../../src/components/PostCard";
 import { subscribePosts } from "../../src/services/postService";
 import { COLORS } from "../../src/theme/colors";
 
-const CATEGORIES = ["All", "Tech", "Guidance", "Business", "Support"];
-
 export default function FeedScreen() {
   const [posts, setPosts] = useState([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = subscribePosts(setPosts);
+    const unsub = subscribePosts((data) => {
+      setPosts(data);
+      setLoading(false);
+    });
     return unsub;
   }, []);
+
+  // --- DYNAMIC CATEGORIES WITH POST COUNT ---
+  const dynamicCategories = useMemo(() => {
+    const counts = {};
+
+    posts.forEach((p) => {
+      const cat = p.primaryExpertiseName || p.category;
+      if (cat) {
+        counts[cat] = (counts[cat] || 0) + 1;
+      }
+    });
+
+    // Sort by usage count and take top 5
+    const top5Names = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+
+    // Structure the data for the FlatList
+    const categoriesList = [{ name: "All", count: posts.length }];
+
+    top5Names.forEach((name) => {
+      categoriesList.push({ name, count: counts[name] });
+    });
+
+    return categoriesList;
+  }, [posts]);
 
   const filteredPosts = useMemo(() => {
     return posts.filter((p) => {
@@ -44,16 +74,16 @@ export default function FeedScreen() {
     });
   }, [posts, search, activeCategory]);
 
-  const handleCategoryPress = (item) => {
+  const handleCategoryPress = (name) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveCategory(item);
+    setActiveCategory(name);
   };
 
   return (
     <AppScreen backgroundColor="#FDFDFD">
       <StatusBar barStyle="dark-content" />
 
-      {/* --- COMPACT HEADER --- */}
+      {/* --- HEADER --- */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Community</Text>
@@ -74,7 +104,7 @@ export default function FeedScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* --- COMPACT SEARCH --- */}
+      {/* --- SEARCH --- */}
       <View style={styles.searchSection}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={16} color="#64748B" />
@@ -98,71 +128,81 @@ export default function FeedScreen() {
         </View>
       </View>
 
-      {/* --- TIGHT CATEGORIES --- */}
+      {/* --- DYNAMIC CATEGORIES WITH COUNTS --- */}
       <View style={styles.categoryContainer}>
         <FlatList
-          data={CATEGORIES}
+          data={dynamicCategories}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryList}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => handleCategoryPress(item)}
+              onPress={() => handleCategoryPress(item.name)}
               style={[
                 styles.categoryChip,
-                activeCategory === item && styles.activeCategoryChip,
+                activeCategory === item.name && styles.activeCategoryChip,
               ]}
             >
               <Text
                 style={[
                   styles.categoryText,
-                  activeCategory === item && styles.activeCategoryText,
+                  activeCategory === item.name && styles.activeCategoryText,
                 ]}
               >
-                {item}
+                {item.name}
               </Text>
+              <View
+                style={[
+                  styles.countBadge,
+                  activeCategory === item.name
+                    ? styles.activeCountBadge
+                    : styles.inactiveCountBadge,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.countText,
+                    activeCategory === item.name && styles.activeCountText,
+                  ]}
+                >
+                  {item.count}
+                </Text>
+              </View>
             </TouchableOpacity>
           )}
-          keyExtractor={(item) => item}
+          keyExtractor={(item) => item.name}
         />
       </View>
 
       {/* --- MAIN FEED LIST --- */}
-      <FlatList
-        data={filteredPosts}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <View style={styles.cardWrapper}>
-            <PostCard
-              post={item}
-              onPress={() => router.push(`/post/${item.id}`)}
-            />
-          </View>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={32} color="#CBD5E1" />
-            <Text style={styles.emptyTitle}>No matching posts</Text>
-          </View>
-        }
-      />
-
-      {/* --- FAB --- */}
-      <View style={styles.fabWrapper}>
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/create-post");
-          }}
-          activeOpacity={0.9}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-          <Text style={styles.fabText}>Ask Guidance</Text>
-        </TouchableOpacity>
-      </View>
+      {loading ? (
+        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={filteredPosts}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <View style={styles.cardWrapper}>
+              <PostCard
+                post={item}
+                onPress={() => router.push(`/post/${item.id}`)}
+              />
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="document-text-outline"
+                size={32}
+                color="#CBD5E1"
+              />
+              <Text style={styles.emptyTitle}>No matching posts</Text>
+            </View>
+          }
+        />
+      )}
     </AppScreen>
   );
 }
@@ -173,7 +213,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
     marginBottom: 12,
   },
   greeting: {
@@ -199,7 +239,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   searchSection: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
     marginBottom: 12,
   },
   searchBar: {
@@ -222,13 +262,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   categoryList: {
-    paddingHorizontal: 4,
-    gap: 8,
+    paddingHorizontal: 16,
+    gap: 10,
   },
   categoryChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
     backgroundColor: "#FFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -239,19 +281,42 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#64748B",
   },
   activeCategoryText: {
     color: "#FFF",
   },
-  listContent: {
+  countBadge: {
+    marginLeft: 8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 4,
+  },
+  inactiveCountBadge: {
+    backgroundColor: "#F1F5F9",
+  },
+  activeCountBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  countText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#94A3B8",
+  },
+  activeCountText: {
+    color: "#FFF",
+  },
+  listContent: {
+    paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 120,
   },
   cardWrapper: {
-    marginBottom: 10, // Reduced space between cards
+    marginBottom: 10,
   },
   emptyState: {
     alignItems: "center",
@@ -263,31 +328,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#94A3B8",
     marginTop: 8,
-  },
-  fabWrapper: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 30 : 20,
-    left: 16,
-    right: 16,
-    zIndex: 999,
-  },
-  fab: {
-    backgroundColor: COLORS.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 54,
-    borderRadius: 16,
-    elevation: 8,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-  },
-  fabText: {
-    color: "#fff",
-    fontWeight: "800",
-    marginLeft: 6,
-    fontSize: 15,
   },
 });

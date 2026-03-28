@@ -43,14 +43,12 @@ export default function RegisterScreen() {
   const showToast = (message, type = "success") => {
     setToast({ visible: true, message, type });
 
-    // Trigger Haptics based on type
-    if (type === "success") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    if (Platform.OS !== "web") {
+      type === "success"
+        ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+        : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
 
-    // Auto-hide after 4 seconds
     setTimeout(() => {
       setToast((prev) => ({ ...prev, visible: false }));
     }, 4000);
@@ -64,7 +62,7 @@ export default function RegisterScreen() {
     }
 
     if (password.length < 6) {
-      showToast("Password must be 6+ characters.", "error");
+      showToast("Password must be at least 6 characters.", "error");
       return;
     }
 
@@ -75,20 +73,22 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (Platform.OS !== "web")
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+      // This creates the Auth user AND the Firestore profile
       await registerUser({ fullName, email, password });
 
-      showToast("Account Created! Verify your email.", "success");
+      showToast("Account created! Check your email to verify.", "success");
 
-      // Small delay to let the user see the success message
+      // Redirect to verification screen after 2 seconds
+      // Our RootLayout NavigationGuard will also naturally catch this
       setTimeout(() => {
-        router.replace("/(public)/login");
+        router.replace("/verify-email");
       }, 2000);
     } catch (error) {
       console.error("Registration failed:", error.code);
 
-      // Map Firebase Errors to User-Friendly Messages
       let errorMsg = "Could not register. Please try again.";
       if (error.code === "auth/email-already-in-use") {
         errorMsg = "This email is already registered.";
@@ -96,6 +96,8 @@ export default function RegisterScreen() {
         errorMsg = "Please use a valid email address.";
       } else if (error.code === "auth/network-request-failed") {
         errorMsg = "Check your internet connection.";
+      } else if (error.code === "auth/weak-password") {
+        errorMsg = "Password is too weak.";
       }
 
       showToast(errorMsg, "error");
@@ -158,9 +160,7 @@ export default function RegisterScreen() {
               <Ionicons name="person-add-sharp" size={38} color="#fff" />
             </View>
             <Text style={styles.brand}>Join FRIIANS</Text>
-            <Text style={styles.tagline}>
-              Build your alumni profile and connect with verified experts.
-            </Text>
+            <Text style={styles.tagline}>Network. Learn. Grow. Together.</Text>
           </Animated.View>
 
           <Animated.View
@@ -170,7 +170,7 @@ export default function RegisterScreen() {
             <View style={styles.cardHeader}>
               <Text style={styles.title}>Create Account</Text>
               <Text style={styles.subtitle}>
-                Enter your details to get started
+                Join our community of verified experts
               </Text>
             </View>
 
@@ -179,7 +179,7 @@ export default function RegisterScreen() {
                 label="Full Name"
                 value={fullName}
                 onChangeText={setFullName}
-                placeholder="Write your full name here"
+                placeholder="Write your full name"
                 leftIcon="person-outline"
               />
 
@@ -187,7 +187,7 @@ export default function RegisterScreen() {
                 label="Email Address"
                 value={email}
                 onChangeText={setEmail}
-                placeholder="name@email.com"
+                placeholder="Write your email address"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 leftIcon="mail-outline"
@@ -221,7 +221,7 @@ export default function RegisterScreen() {
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>ALREADY REGISTERED?</Text>
+              <Text style={styles.dividerText}>ALREADY HAVE AN ACCOUNT?</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -229,9 +229,11 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={styles.loginButton}
                 activeOpacity={0.7}
-                onPress={() => Haptics.selectionAsync()}
+                onPress={() =>
+                  Platform.OS !== "web" && Haptics.selectionAsync()
+                }
               >
-                <Text style={styles.loginActionText}>Back to Sign In</Text>
+                <Text style={styles.loginActionText}>Sign In Instead</Text>
               </TouchableOpacity>
             </Link>
           </Animated.View>
@@ -321,7 +323,7 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: 1, backgroundColor: "#F1F5F9" },
   dividerText: {
     marginHorizontal: 15,
-    fontSize: 11,
+    fontSize: 10,
     color: "#94A3B8",
     fontWeight: "800",
     letterSpacing: 1,
@@ -332,18 +334,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   loginActionText: { color: COLORS.primary, fontSize: 15, fontWeight: "800" },
-  footerText: {
-    marginTop: 25,
-    textAlign: "center",
-    fontSize: 13,
-    color: "#94A3B8",
-    paddingHorizontal: 30,
-  },
-
-  // --- TOAST STYLES ---
   toastContainer: {
     position: "absolute",
-    top: 60,
+    top: Platform.OS === "ios" ? 60 : 40,
     left: 20,
     right: 20,
     zIndex: 9999,
@@ -354,7 +347,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     gap: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 10,

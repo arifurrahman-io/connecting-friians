@@ -28,6 +28,7 @@ import {
   subscribeToRecentActivity,
 } from "../../src/services/platformService";
 
+import { LinearGradient } from "expo-linear-gradient";
 import { COLORS } from "../../src/theme/colors";
 import { formatTimeAgo } from "../../src/utils/timeAgo";
 
@@ -59,7 +60,7 @@ export default function HomeScreen() {
       target: "/directory",
     },
     {
-      label: "Collabs",
+      label: "Efforts",
       value: 0,
       icon: "flask",
       color: "#EC4899",
@@ -72,12 +73,37 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const greeting = useMemo(() => {
+  // --- PERFECT GREETING LOGIC ---
+  const greetingData = useMemo(() => {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good Morning";
-    if (hour < 18) return "Good Afternoon";
-    return "Good Evening";
-  }, []);
+    const firstName = profile?.fullName || "Friend";
+
+    let text;
+    let icon;
+    let bgColors;
+    let isDark = false;
+
+    if (hour >= 5 && hour < 12) {
+      text = "Good Morning";
+      icon = "sunny";
+      bgColors = ["#EEF2FF", "#C7D2FE"];
+    } else if (hour >= 12 && hour < 17) {
+      text = "Good Afternoon";
+      icon = "cloud-outline";
+      bgColors = ["#E0F2FE", "#7DD3FC"];
+    } else if (hour >= 17 && hour < 22) {
+      text = "Good Evening";
+      icon = "partly-sunny";
+      bgColors = ["#FAE8FF", "#F0ABFC"];
+    } else {
+      text = "Good Night";
+      icon = "moon";
+      bgColors = ["#1E293B", "#0F172A"];
+      isDark = true;
+    }
+
+    return { text, firstName, icon, bgColors, isDark };
+  }, [profile?.fullName]);
 
   useEffect(() => {
     let unsubStats = () => {};
@@ -95,7 +121,7 @@ export default function HomeScreen() {
             target: "/directory",
           },
           {
-            label: "Solved",
+            label: "Solved Issues",
             value: data.solvedCount || 0,
             icon: "checkmark-done-circle",
             color: "#10B981",
@@ -109,7 +135,7 @@ export default function HomeScreen() {
             target: "/directory",
           },
           {
-            label: "Collabs",
+            label: "Efforts",
             value: data.collabCount || 0,
             icon: "flask",
             color: "#EC4899",
@@ -121,7 +147,6 @@ export default function HomeScreen() {
     });
 
     unsubActivity = subscribeToRecentActivity((items) => {
-      // FIX: Only take the last 5 activities for the Live Feed
       setActivities((items || []).slice(0, 5));
     });
 
@@ -156,38 +181,64 @@ export default function HomeScreen() {
   };
 
   return (
-    <AppScreen backgroundColor="#F8FAFC">
+    <AppScreen backgroundColor={greetingData.isDark ? "#0F172A" : "#F8FAFC"}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        // FIX: Added large padding to prevent the Quick Action card from hiding under the Tab Bar
-        contentContainerStyle={[styles.container, { paddingBottom: 120 }]}
+        contentContainerStyle={[styles.container, { paddingBottom: 20 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={COLORS.primary}
+            tintColor={greetingData.isDark ? "#FFF" : COLORS.primary}
           />
         }
       >
-        {/* HEADER */}
+        {/* DYNAMIC HEADER */}
         <Animated.View
           entering={FadeInDown.duration(700)}
           style={styles.header}
         >
-          <View>
-            <Text style={styles.greeting}>{greeting},</Text>
-            <Text style={styles.name}>
-              {profile?.fullName?.split(" ")[1] || "Friend"}
+          <View style={styles.greetingWrapper}>
+            <View style={styles.timeLabelRow}>
+              <Ionicons
+                name={greetingData.icon}
+                size={14}
+                color={greetingData.isDark ? "#94A3B8" : "#64748B"}
+              />
+              <Text
+                style={[
+                  styles.greeting,
+                  greetingData.isDark && { color: "#94A3B8" },
+                ]}
+              >
+                {greetingData.text}
+              </Text>
+            </View>
+            <Text
+              style={[styles.name, greetingData.isDark && { color: "#FFF" }]}
+            >
+              {greetingData.firstName}
             </Text>
           </View>
+
           <TouchableOpacity
-            style={styles.iconCircle}
+            style={[
+              styles.iconCircle,
+              greetingData.isDark && {
+                backgroundColor: "#1E293B",
+                borderColor: "#334155",
+              },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push("/notifications");
             }}
           >
-            <Ionicons name="notifications-outline" size={24} color="#1E293B" />
+            <Ionicons
+              name="notifications-outline"
+              size={24}
+              color={greetingData.isDark ? "#FFF" : "#1E293B"}
+            />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
@@ -198,10 +249,17 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* PLATFORM STATS */}
+        {/* STATS BENTO GRID */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>PLATFORM SNAPSHOT</Text>
+            <Text
+              style={[
+                styles.sectionLabel,
+                greetingData.isDark && { color: "#64748B" },
+              ]}
+            >
+              PLATFORM SNAPSHOT
+            </Text>
             {loading && (
               <ActivityIndicator size="small" color={COLORS.primary} />
             )}
@@ -219,7 +277,13 @@ export default function HomeScreen() {
               >
                 <Animated.View
                   entering={FadeInRight.delay(index * 100)}
-                  style={styles.statCard}
+                  style={[
+                    styles.statCard,
+                    greetingData.isDark && {
+                      backgroundColor: "#1E293B",
+                      borderColor: "#334155",
+                    },
+                  ]}
                 >
                   <View
                     style={[
@@ -230,7 +294,14 @@ export default function HomeScreen() {
                     <Ionicons name={item.icon} size={20} color={item.color} />
                   </View>
                   <View>
-                    <Text style={styles.statValue}>{item.value}</Text>
+                    <Text
+                      style={[
+                        styles.statValue,
+                        greetingData.isDark && { color: "#FFF" },
+                      ]}
+                    >
+                      {item.value}
+                    </Text>
                     <Text style={styles.statLabel}>{item.label}</Text>
                   </View>
                 </Animated.View>
@@ -239,15 +310,19 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* LIVE ACTIVITY */}
+        {/* ACTIVITY FEED */}
         <View style={styles.section}>
           <View style={styles.rowBetween}>
-            <Text style={styles.sectionLabel}>LIVE UPDATES</Text>
+            <Text
+              style={[
+                styles.sectionLabel,
+                greetingData.isDark && { color: "#64748B" },
+              ]}
+            >
+              LIVE UPDATES
+            </Text>
             <TouchableOpacity
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push("/activity-log"); // Ensure this route exists
-              }}
+              onPress={() => router.push("/activity-log")}
               style={styles.seeAllBtn}
             >
               <Text style={styles.seeAllText}>See All</Text>
@@ -261,7 +336,13 @@ export default function HomeScreen() {
 
           <Animated.View
             entering={FadeIn.delay(300)}
-            style={styles.activityList}
+            style={[
+              styles.activityList,
+              greetingData.isDark && {
+                backgroundColor: "#1E293B",
+                borderColor: "#334155",
+              },
+            ]}
           >
             {activities.length > 0 ? (
               activities.map((act, index) => {
@@ -275,18 +356,25 @@ export default function HomeScreen() {
                       index === activities.length - 1 && {
                         borderBottomWidth: 0,
                       },
+                      greetingData.isDark && { borderBottomColor: "#334155" },
                     ]}
                   >
                     <View
                       style={[
                         styles.activityIconCircle,
-                        { backgroundColor: icon.color + "10" },
+                        { backgroundColor: icon.color + "15" },
                       ]}
                     >
                       <Ionicons name={icon.name} size={14} color={icon.color} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.activityText} numberOfLines={2}>
+                      <Text
+                        style={[
+                          styles.activityText,
+                          greetingData.isDark && { color: "#CBD5E1" },
+                        ]}
+                        numberOfLines={2}
+                      >
                         {act.message}
                       </Text>
                       <Text style={styles.activityTime}>
@@ -310,7 +398,10 @@ export default function HomeScreen() {
         {/* QUICK ACTION */}
         <Animated.View entering={FadeInDown.delay(500)}>
           <TouchableOpacity
-            style={styles.footerAction}
+            style={[
+              styles.footerAction,
+              greetingData.isDark && { backgroundColor: COLORS.primary },
+            ]}
             activeOpacity={0.9}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -318,14 +409,67 @@ export default function HomeScreen() {
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text style={styles.footerActionText}>Stuck on a problem?</Text>
-              <Text style={styles.footerActionSubtext}>
-                Our alumni experts are ready to help you.
+              <Text style={styles.footerActionText}>Need support?</Text>
+              <Text
+                style={[
+                  styles.footerActionSubtext,
+                  greetingData.isDark && { color: "#FFF", opacity: 0.8 },
+                ]}
+              >
+                Experts are ready to help you.
               </Text>
             </View>
-            <View style={styles.footerButton}>
-              <Text style={styles.footerButtonText}>Ask Experts</Text>
+            <View
+              style={[
+                styles.footerButton,
+                greetingData.isDark && { backgroundColor: "#FFF" },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  greetingData.isDark && { color: COLORS.primary },
+                ]}
+              >
+                Ask Experts
+              </Text>
             </View>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* OPINION / FEEDBACK QUICK ACTION */}
+        <Animated.View entering={FadeInDown.delay(600)}>
+          <TouchableOpacity
+            style={styles.opinionCard}
+            activeOpacity={0.9}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/contact"); // Ensure your feedback file is named contact.jsx
+            }}
+          >
+            <LinearGradient
+              colors={["#4044fc", "#2015e2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.opinionGradient}
+            >
+              <View style={styles.opinionContent}>
+                <View style={styles.opinionIconCircle}>
+                  <Ionicons
+                    name="chatbubble-ellipses"
+                    size={20}
+                    color="#6366F1"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.opinionTitle}>Have an opinion?</Text>
+                  <Text style={styles.opinionSubtext}>
+                    Help us build the perfect alumni network.
+                  </Text>
+                </View>
+                <Ionicons name="arrow-forward-circle" size={32} color="#FFF" />
+              </View>
+            </LinearGradient>
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -340,30 +484,36 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 30,
+    marginTop: 10,
   },
+  greetingWrapper: { gap: 2 },
+  timeLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   greeting: {
-    fontSize: 13,
+    fontSize: 10,
     color: "#94A3B8",
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
-  name: { fontSize: 32, fontWeight: "900", color: "#0F172A", marginTop: -4 },
+  name: { fontSize: 22, fontWeight: "900", color: "#0F172A", marginTop: -2 },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 52,
+    height: 52,
+    borderRadius: 20,
     backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    elevation: 2,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
   },
   badge: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 10,
+    right: 10,
     backgroundColor: "#EF4444",
     minWidth: 18,
     height: 18,
@@ -378,23 +528,23 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 15,
+    gap: 8,
+    marginBottom: 16,
   },
   sectionLabel: {
-    fontSize: 12,
-    fontWeight: "800",
+    fontSize: 11,
+    fontWeight: "900",
     color: "#94A3B8",
-    letterSpacing: 1.2,
+    letterSpacing: 1.5,
   },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 16,
   },
-  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
-  seeAllText: { fontSize: 13, fontWeight: "700", color: COLORS.primary },
+  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  seeAllText: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -402,21 +552,21 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 24,
-    marginBottom: 15,
+    padding: 8,
+    borderRadius: 16,
+    marginBottom: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   iconBox: { padding: 10, borderRadius: 16 },
-  statValue: { fontSize: 20, fontWeight: "900", color: "#1E293B" },
-  statLabel: { fontSize: 12, color: "#64748B", fontWeight: "500" },
+  statValue: { fontSize: 22, fontWeight: "900", color: "#1E293B" },
+  statLabel: { fontSize: 12, color: "#65696d", fontWeight: "600" },
   activityList: {
     backgroundColor: "#FFF",
-    borderRadius: 28,
+    borderRadius: 30,
     padding: 20,
     borderWidth: 1,
     borderColor: "#F1F5F9",
@@ -424,26 +574,30 @@ const styles = StyleSheet.create({
   activityRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#F8FAFC",
   },
   activityIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-    marginTop: 2,
+    marginRight: 14,
   },
   activityText: {
     fontSize: 14,
     color: "#334155",
-    fontWeight: "500",
+    fontWeight: "600",
     lineHeight: 20,
   },
-  activityTime: { fontSize: 11, color: "#94A3B8", marginTop: 4 },
+  activityTime: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 4,
+    fontWeight: "500",
+  },
   emptyContainer: { alignItems: "center", padding: 20 },
   emptyText: {
     textAlign: "center",
@@ -458,21 +612,62 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  footerActionText: { color: "#FFF", fontWeight: "800", fontSize: 17 },
-  footerActionSubtext: { color: "#94A3B8", fontSize: 12, marginTop: 4 },
+  footerActionText: { color: "#FFF", fontWeight: "900", fontSize: 18 },
+  footerActionSubtext: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: "500",
+  },
   footerButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     marginLeft: 10,
   },
-  footerButtonText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
+  footerButtonText: { color: "#FFF", fontWeight: "800", fontSize: 13 },
+  opinionCard: {
+    marginTop: 16,
+    borderRadius: 24,
+    overflow: "hidden",
+    elevation: 8,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+  },
+  opinionGradient: {
+    padding: 20,
+  },
+  opinionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 15,
+  },
+  opinionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  opinionTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFF",
+  },
+  opinionSubtext: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: "600",
+    marginTop: 2,
+  },
 });

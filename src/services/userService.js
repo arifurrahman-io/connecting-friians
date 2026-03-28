@@ -54,61 +54,52 @@ export function subscribeUserProfile(uid, callback) {
    UPDATE USER PROFILE + SYNC STATS
 ----------------------------- */
 export async function updateUserProfile(uid, payload) {
-  if (!uid) throw new Error("UID is required for profile update");
+  if (!uid) throw new Error("UID is required");
 
   const userRef = doc(db, "users", uid);
 
   try {
-    // 1. Get current snapshot to compare old vs new state
     const currentSnap = await getDoc(userRef);
     const oldData = currentSnap.data() || {};
 
-    const wasCompleted = oldData.profileCompleted || false;
-    const wasExpert = oldData.expertise?.length > 0;
-    const isNowExpert = payload.expertise?.length > 0;
+    const wasCompleted = oldData.profileCompleted === true; // Strict check
+    const isNowCompleting = payload.profileCompleted === true;
 
-    // 2. Prepare update object
+    const wasExpert = (oldData.expertise?.length || 0) > 0;
+    const isNowExpert = (payload.expertise?.length || 0) > 0;
+
     const updateData = {
       ...payload,
       updatedAt: serverTimestamp(),
     };
 
-    // 3. DYNAMIC SYNC LOGIC (Updates Global Bento Grid Stats)
     const statsUpdate = {};
 
-    // A. If first time completing profile (New Active User)
-    if (!wasCompleted && payload.profileCompleted) {
+    // Only increment activeUsers IF they were not completed before AND are now
+    if (!wasCompleted && isNowCompleting) {
       statsUpdate.activeUsers = increment(1);
 
-      // Log activity to the feed
       await addDoc(collection(db, "activities"), {
         type: "join",
-        message: `${payload.fullName || "A new member"} joined the community!`,
+        message: `${payload.fullName || "A new member"} just completed their profile!`,
         userId: uid,
         createdAt: serverTimestamp(),
       });
     }
 
-    // B. EXPERT COUNT SYNC
+    // Expert count logic
     if (!wasExpert && isNowExpert) {
       statsUpdate.expertCount = increment(1);
     } else if (wasExpert && !isNowExpert) {
       statsUpdate.expertCount = increment(-1);
     }
 
-    // Apply stats update to platform_metadata if changes exist
     if (Object.keys(statsUpdate).length > 0) {
-      try {
-        await setDoc(STATS_REF, statsUpdate, { merge: true });
-      } catch (e) {
-        console.warn("Stats update failed, continuing profile save:", e);
-      }
+      // Use the correct ID "global_metrics" as per your code
+      await setDoc(STATS_REF, statsUpdate, { merge: true });
     }
 
-    // 4. Update the User Document
-    // Using setDoc with merge: true is safer than updateDoc for first-time saves
     await setDoc(userRef, updateData, { merge: true });
-
     return { success: true };
   } catch (error) {
     console.error("Profile update failed:", error);

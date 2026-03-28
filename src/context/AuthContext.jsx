@@ -1,7 +1,7 @@
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { auth, db } from "../firebase/config"; // Verified path
+import { auth, db } from "../firebase/config";
 import { getUserProfile } from "../services/userService";
 
 const AuthContext = createContext(null);
@@ -19,37 +19,43 @@ export function AuthProvider({ children }) {
       setUser(currentUser || null);
 
       if (currentUser) {
-        // 2. Initial Fetch for fast loading (Better UX)
+        // 2. Initial Fetch for immediate UI response
         try {
           const data = await getUserProfile(currentUser.uid);
           setProfile(data);
         } catch (err) {
-          console.error("AuthContext: Initial profile fetch failed", err);
+          // Likely a permission error because doc doesn't exist yet; we catch it silently
+          console.log("AuthContext: Initial fetch pending profile creation...");
         }
 
-        // 3. DYNAMIC SYNC: Listen for real-time changes
-        // This ensures if you change a role in Firebase, the UI updates INSTANTLY.
+        // 3. DYNAMIC SYNC: Real-time listener
         unsubscribeProfile = onSnapshot(
           doc(db, "users", currentUser.uid),
           (docSnap) => {
             if (docSnap.exists()) {
-              const data = docSnap.data();
-              setProfile(data);
-              console.log("🔥 Profile Synced:", data.role); // Debugging role
+              setProfile(docSnap.data());
             }
+            // Once we have a snapshot (even if empty), we can stop the loading spinner
+            setLoading(false);
           },
-          (err) => console.warn("Profile listener error:", err),
+          (err) => {
+            console.warn(
+              "Profile listener error (Rules/Network):",
+              err.message,
+            );
+            // FAILSAFE: Ensure app doesn't stay on loading screen if rules block read
+            setLoading(false);
+          },
         );
       } else {
-        // Clear state on logout
+        // Handle Logout
         setProfile(null);
         if (unsubscribeProfile) {
           unsubscribeProfile();
           unsubscribeProfile = null;
         }
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => {
@@ -61,7 +67,17 @@ export function AuthProvider({ children }) {
   const refreshProfile = async () => {
     if (!auth.currentUser) return;
     try {
-      const data = await getUserProfile(auth.currentUser.uid);
+      // Force reload the auth user to check for updated emailVerified status
+      await auth.currentUser.reload();
+
+      // We must manually spread the properties to trigger a re-render in useMemo
+      const updatedUser = auth.currentUser;
+      setUser({
+        ...updatedUser,
+        emailVerified: updatedUser.emailVerified,
+      });
+
+      const data = await getUserProfile(updatedUser.uid);
       setProfile(data);
     } catch (err) {
       console.error("Manual refresh failed", err);
@@ -71,14 +87,17 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
-      profile, // This contains your 'role'
+      profile,
       loading,
       refreshProfile,
-      // Fixed: Check both user and profile for admin status
-      isAdmin: profile?.role === "admin",
-      isAuthenticated: !!user,
+      // Status flags used by Navigation Guards
+      isAdmin: profile?.role === "admin" && user?.emailVerified === true,
+      isAuthenticated: !!user && user?.emailVerified === true,
+      isEmailVerified: user?.emailVerified === true,
     }),
-    [user, profile, loading],
+    // Added user?.emailVerified to the dependency array to ensure UI updates
+    // immediately when the reload() completes.
+    [user, profile, loading, user?.emailVerified],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Link, router } from "expo-router";
+import { Link } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import {
@@ -20,7 +20,7 @@ import Animated, {
   FadeOut,
 } from "react-native-reanimated";
 
-// Firebase Imports for the Ban Check
+// Firebase Imports
 import { signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../src/firebase/config";
@@ -56,7 +56,7 @@ export default function LoginScreen() {
     visible: false,
     message: "",
     type: "success",
-    long: false, // Added for the ban message
+    long: false,
   });
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function LoginScreen() {
         ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
         : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-    // Ban messages stay longer (8 seconds) so users can read the email
+    // Auto-hide logic based on the 'isLong' flag
     setTimeout(
       () => setToast((prev) => ({ ...prev, visible: false })),
       isLong ? 8000 : 3000,
@@ -99,45 +99,38 @@ export default function LoginScreen() {
       if (Platform.OS !== "web")
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // 1. Perform standard Auth Login
-      const userCredential = await loginUser(email, password);
-      const user = userCredential.user;
+      const user = await loginUser(email, password);
 
-      // 2. FETCH PROFILE TO CHECK BAN STATUS
+      // 1. Check for Ban Status first
       const userDoc = await getDoc(doc(db, "users", user.uid));
-
       if (userDoc.exists()) {
         const userData = userDoc.data();
-
-        if (userData.status === "banned" || userData.isBlocked === true) {
-          // Immediately sign out so the NavigationGuard doesn't let them in
+        if (userData.status === "blocked" || userData.status === "banned") {
           await signOut(auth);
-
-          showToast(
-            "Account Banned: Please contact arifurrahman.now@gmail.com to appeal.",
-            "error",
-            true,
-          );
-          setLoading(false);
+          showToast("Account Banned. Contact support.", "error", true);
           return;
         }
       }
 
-      // 3. SUCCESS LOGIC
-      if (rememberMe) {
-        await storage.setItem("user_email", email.trim());
-      } else {
-        await storage.deleteItem("user_email");
+      // 2. Check for Verification
+      if (!user.emailVerified) {
+        showToast(
+          "Email not verified. Please check your inbox.",
+          "error",
+          true,
+        );
+        // The NavigationGuard will now automatically pick this up and
+        // move the user to /verify-email because they ARE logged in.
+        return;
       }
 
+      // 3. Success
+      if (rememberMe) await storage.setItem("user_email", email.trim());
       showToast("Welcome back!", "success");
-      setTimeout(() => router.replace("/(tabs)"), 1000);
     } catch (error) {
-      console.log(error);
-      const errorMsg =
-        error.code === "auth/invalid-credential"
-          ? "Invalid credentials"
-          : "Login failed. Check your connection.";
+      let errorMsg = "Login failed. Please check your credentials.";
+      if (error.code === "auth/invalid-credential")
+        errorMsg = "Invalid email or password.";
       showToast(errorMsg, "error");
     } finally {
       setLoading(false);
@@ -148,7 +141,7 @@ export default function LoginScreen() {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" translucent />
 
-      {/* DYNAMIC TOAST */}
+      {/* DYNAMIC TOAST COMPONENT */}
       {toast.visible && (
         <Animated.View
           entering={FadeInUp}
@@ -157,7 +150,7 @@ export default function LoginScreen() {
             styles.toast,
             {
               backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444",
-              height: toast.long ? "auto" : 54, // Adjust height for long ban text
+              height: toast.long ? "auto" : 54, // Dynamic height for long text
             },
           ]}
         >
@@ -204,6 +197,8 @@ export default function LoginScreen() {
                 onChangeText={setEmail}
                 placeholder="Enter your email"
                 leftIcon="mail-outline"
+                autoCapitalize="none"
+                keyboardType="email-address"
               />
               <InputField
                 label="Password"
@@ -225,11 +220,11 @@ export default function LoginScreen() {
                   size={20}
                   color={rememberMe ? COLORS.primary : "#94A3B8"}
                 />
-                <Text style={styles.checkText}>Remember</Text>
+                <Text style={styles.checkText}>Remember Me</Text>
               </TouchableOpacity>
               <Link href="/forgot-password" asChild>
                 <TouchableOpacity>
-                  <Text style={styles.forgotLink}>Forgot?</Text>
+                  <Text style={styles.forgotLink}>Forgot Password?</Text>
                 </TouchableOpacity>
               </Link>
             </View>
@@ -354,7 +349,7 @@ const styles = StyleSheet.create({
   footerAction: { fontSize: 14, color: COLORS.primary, fontWeight: "800" },
   toast: {
     position: "absolute",
-    top: 60,
+    top: Platform.OS === "ios" ? 60 : 40,
     left: 20,
     right: 20,
     zIndex: 100,

@@ -5,21 +5,13 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import {
-  addDoc,
-  collection,
-  doc,
-  increment,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/config";
 
-const STATS_REF = doc(db, "platform_metadata", "global_metrics");
-
 /**
- * Registers a new user with fail-safe database and email logic.
+ * Registers a new user.
+ * Note: We NO LONGER increment activeUsers here to prevent double-counting.
+ * Counting happens only when the profile is actually completed.
  */
 export async function registerUser({ fullName, email, password }) {
   // 1. Create the Auth Account
@@ -32,8 +24,9 @@ export async function registerUser({ fullName, email, password }) {
   const user = result.user;
   const trimmedName = fullName.trim();
 
-  // 2. CREATE FIRESTORE PROFILE (Crucial step)
-  // We do this first so the user record exists immediately.
+  // 2. CREATE INITIAL FIRESTORE PROFILE
+  // status: 'active' ensures they aren't blocked by default.
+  // profileCompleted: false ensures they aren't counted in stats yet.
   await setDoc(doc(db, "users", user.uid), {
     uid: user.uid,
     fullName: trimmedName,
@@ -47,57 +40,36 @@ export async function registerUser({ fullName, email, password }) {
     completionYear: "",
     expertise: [],
     profileCompleted: false,
+    status: "active",
+    role: "user",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   // 3. SEND VERIFICATION EMAIL
-  // We move this up so it triggers even if the "Stats" logic below fails.
   try {
     await sendEmailVerification(user);
   } catch (emailErr) {
     console.error("Verification email failed to send:", emailErr);
-    // We don't throw here, because the account and profile are already created.
   }
 
-  // 4. DYNAMIC SYNC (The "Stats" logic)
-  // We wrap this in a try/catch so a missing 'global_metrics' doc doesn't break registration.
-  try {
-    await updateDoc(STATS_REF, {
-      activeUsers: increment(1),
-    });
-
-    await addDoc(collection(db, "activities"), {
-      type: "join",
-      message: `Welcome to the community, ${trimmedName}!`,
-      userId: user.uid,
-      createdAt: serverTimestamp(),
-    });
-  } catch (err) {
-    // If this fails, it's usually because the document 'global_metrics' hasn't been created yet manually.
-    console.warn(
-      "Dynamic stats sync skipped: ensure platform_metadata/global_metrics exists.",
-      err,
-    );
-  }
+  // NOTE: Stats sync (activeUsers increment) is now handled EXCLUSIVELY
+  // in userService.updateUserProfile when profileCompleted flips to true.
 
   return user;
 }
 
 /**
- * Logs in user and ensures fresh profile state.
+ * Logs in user and strictly enforces email verification.
  */
 export async function loginUser(email, password) {
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-  // Force reload to pick up the verification status change
+  // Force reload to get the latest verification status
   await result.user.reload();
 
-  if (!result.user.emailVerified) {
-    throw new Error(
-      "Please verify your email first. Check your inbox (and spam).",
-    );
-  }
+  // REMOVE the signOut(auth) from here!
+  // We let the NavigationGuard handle the routing instead of throwing an error.
 
   return result.user;
 }
