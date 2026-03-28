@@ -3,18 +3,39 @@
     "name": "Connecting FRIIANS",
     "slug": "connecting-friians",
     "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "bd.com.arifurrahman.connectingfriians"
+    },
     "android": {
       "package": "bd.com.arifurrahman.connectingfriians",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
+      "permissions": ["RECEIVE_BOOT_COMPLETED"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#ffffff"
       }
     },
+    "notification": {
+      "icon": "./assets/images/android-icon-monochrome.png",
+      "color": "#0F172A"
+    },
+    "plugins": ["expo-router", "expo-notifications"],
     "extra": {
       "eas": {
         "projectId": "15569b1d-a7ba-4f2d-8b23-32a704d697bb"
       }
-    }
+    },
+    "owner": "arifurrahman.expo"
   }
 }
