@@ -43,3 +43,5 @@ app-example
 /android
 
 src/firebase/config.js
+
+release-key.keystore

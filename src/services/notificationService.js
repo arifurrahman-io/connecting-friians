@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -14,7 +15,27 @@ import {
 import { db } from "../firebase/config";
 
 /* ------------------------------------------------
-   CREATE NOTIFICATION
+   PUSH TOKEN MANAGEMENT (NEW)
+------------------------------------------------ */
+/**
+ * Saves a device's push token to the user's profile.
+ * Uses arrayUnion to support users logged into multiple devices.
+ */
+export async function saveDeviceToken(uid, token) {
+  if (!uid || !token) return;
+  try {
+    const userRef = doc(db, "users", uid);
+    await updateDoc(userRef, {
+      fcmTokens: arrayUnion(token),
+      tokenUpdatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Error saving device token:", error);
+  }
+}
+
+/* ------------------------------------------------
+   CREATE NOTIFICATION (Internal App Feed)
 ------------------------------------------------ */
 export async function createNotification({
   receiverId,
@@ -22,10 +43,9 @@ export async function createNotification({
   title,
   body,
   postId = "",
-  type = "general", // e.g., 'comment_on_post', 'matched_expertise_post', 'solved'
+  type = "general",
 }) {
-  // Prevent sending notifications to yourself
-  if (receiverId === senderId) return;
+  if (receiverId === senderId) return; // Prevent self-notifications
 
   try {
     await addDoc(collection(db, "notifications"), {
@@ -59,8 +79,7 @@ export function subscribeNotifications(uid, callback) {
       const list = snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
-        // Ensure date is handled if serverTimestamp hasn't synced yet
-        createdAt: d.data().createdAt?.toDate() || new Date(),
+        createdAt: d.data().createdAt?.toDate() || new Date(), // Handle sync lag
       }));
       callback(list);
     },
@@ -73,10 +92,6 @@ export function subscribeNotifications(uid, callback) {
 /* ------------------------------------------------
    SUBSCRIBE TO UNREAD COUNT (For UI Bell Icon)
 ------------------------------------------------ */
-/**
- * This is crucial for your dynamic header.
- * Use this to show the "activeDot" on your bell icon.
- */
 export function subscribeUnreadCount(uid, callback) {
   const q = query(
     collection(db, "notifications"),
@@ -85,7 +100,7 @@ export function subscribeUnreadCount(uid, callback) {
   );
 
   return onSnapshot(q, (snapshot) => {
-    callback(snapshot.size); // Returns the number of unread notifications
+    callback(snapshot.size); // Returns unread count for the bell icon dot
   });
 }
 
@@ -103,9 +118,6 @@ export async function markNotificationRead(notificationId) {
 /* ------------------------------------------------
    MARK ALL AS READ (Batch Update)
 ------------------------------------------------ */
-/**
- * Improves UX by allowing users to clear all alerts at once.
- */
 export async function markAllNotificationsRead(uid) {
   const q = query(
     collection(db, "notifications"),
@@ -120,5 +132,5 @@ export async function markAllNotificationsRead(uid) {
     batch.update(d.ref, { isRead: true, updatedAt: serverTimestamp() });
   });
 
-  await batch.commit();
+  await batch.commit(); // Efficiently clear all alerts
 }
