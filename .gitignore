@@ -45,3 +45,4 @@ app-example
 src/firebase/config.js
 
 release-key.keystore
+google-services.json
