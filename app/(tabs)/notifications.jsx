@@ -3,36 +3,38 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeInUp, Layout } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInUp, Layout } from "react-native-reanimated";
 import AppScreen from "../../src/components/AppScreen";
 import { useAuth } from "../../src/context/AuthContext";
 import {
   markAllNotificationsRead,
-  markNotificationRead, // Added for high-performance batching
+  markNotificationRead,
   subscribeNotifications,
 } from "../../src/services/notificationService";
 import { COLORS } from "../../src/theme/colors";
-import { formatTimeAgo } from "../../src/utils/timeAgo"; // Fixed function name
+import { formatTimeAgo } from "../../src/utils/timeAgo";
 
 function getNotificationIcon(type) {
   switch (type) {
     case "comment_on_post":
-      return { name: "chatbubble-ellipses", bg: "#E0E7FF", color: "#4F46E5" };
+      return { name: "chatbubble-ellipses", bg: "#EEF2FF", color: "#4F46E5" };
     case "comment_reply":
-      return { name: "arrow-undo", bg: "#DCFCE7", color: "#16A34A" };
+      return { name: "arrow-undo", bg: "#F0FDF4", color: "#16A34A" };
     case "matched_expertise_post":
-      return { name: "flash", bg: "#FEF3C7", color: "#D97706" };
+      return { name: "flash", bg: "#FFFBEB", color: "#D97706" };
     case "solved":
-      return { name: "checkmark-done", bg: "#DBEAFE", color: "#2563EB" };
+      return { name: "checkmark-done", bg: "#EFF6FF", color: "#2563EB" };
     default:
-      return { name: "notifications", bg: "#F1F5F9", color: "#64748B" };
+      return { name: "notifications", bg: "#F8FAFC", color: "#64748B" };
   }
 }
 
@@ -41,16 +43,16 @@ function NotificationCard({ item, onPress }) {
 
   return (
     <Animated.View
-      entering={FadeInUp.duration(400)}
+      entering={FadeInUp.springify().damping(15)}
       layout={Layout.springify()}
     >
       <TouchableOpacity
-        activeOpacity={0.8}
+        activeOpacity={0.7}
         onPress={() => onPress(item)}
         style={[styles.card, !item.isRead && styles.unreadCard]}
       >
-        <View style={[styles.iconWrap, { backgroundColor: icon.bg }]}>
-          <Ionicons name={icon.name} size={20} color={icon.color} />
+        <View style={[styles.iconSquircle, { backgroundColor: icon.bg }]}>
+          <Ionicons name={icon.name} size={22} color={icon.color} />
         </View>
 
         <View style={styles.cardBody}>
@@ -69,10 +71,20 @@ function NotificationCard({ item, onPress }) {
           </Text>
 
           <View style={styles.bottomRow}>
-            <Text style={styles.timeText}>{formatTimeAgo(item.createdAt)}</Text>
+            <View style={styles.timeWrapper}>
+              <Ionicons name="time-outline" size={12} color="#94A3B8" />
+              <Text style={styles.timeText}>
+                {formatTimeAgo(item.createdAt)}
+              </Text>
+            </View>
             {item.postId && (
               <View style={styles.viewBadge}>
-                <Text style={styles.viewBadgeText}>View Details</Text>
+                <Text style={styles.viewBadgeText}>Open</Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={10}
+                  color={COLORS.primary}
+                />
               </View>
             )}
           </View>
@@ -85,17 +97,15 @@ function NotificationCard({ item, onPress }) {
 export default function NotificationsScreen() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     return subscribeNotifications(user.uid, setItems);
   }, [user]);
 
-  const unreadCount = useMemo(
-    () => items.filter((i) => !i.isRead).length,
-    [items],
-  );
+  const unreadItems = useMemo(() => items.filter((i) => !i.isRead), [items]);
+  const unreadCount = unreadItems.length;
 
   const handleOpen = async (item) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -108,38 +118,45 @@ export default function NotificationsScreen() {
   };
 
   const handleMarkAllRead = async () => {
-    if (unreadCount === 0) return;
+    if (unreadCount === 0 || isClearing) return;
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setIsClearing(true);
+
     try {
       await markAllNotificationsRead(user.uid);
     } catch (error) {
-      console.error("Batch mark read failed:", error);
+      console.error("Clear all failed:", error);
+    } finally {
+      setIsClearing(false);
     }
   };
 
   return (
     <AppScreen backgroundColor="#F8FAFC">
-      <View style={styles.header}>
-        <View>
+      {/* GLASSMORPHISM HEADER */}
+      <View style={styles.headerContainer}>
+        <View style={styles.headerTextStack}>
           <Text style={styles.headerTitle}>Inbox</Text>
-          <Text style={styles.headerSub}>
+          <Animated.Text entering={FadeIn.delay(200)} style={styles.headerSub}>
             {unreadCount > 0
-              ? `You have ${unreadCount} new alerts`
-              : "You're all caught up!"}
-          </Text>
+              ? `You have ${unreadCount} unread message${unreadCount > 1 ? "s" : ""}`
+              : "All caught up"}
+          </Animated.Text>
         </View>
 
         {unreadCount > 0 && (
           <TouchableOpacity
             onPress={handleMarkAllRead}
             style={styles.markAllBtn}
+            disabled={isClearing}
+            activeOpacity={0.8}
           >
-            <Ionicons
-              name="checkmark-done-all"
-              size={20}
-              color={COLORS.primary}
-            />
-            <Text style={styles.markAllText}>Clear All</Text>
+            {isClearing ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Text style={styles.markAllText}>Mark all read</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -154,19 +171,20 @@ export default function NotificationsScreen() {
         )}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={false}
             onRefresh={() => {}}
             tintColor={COLORS.primary}
           />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <View style={styles.emptyIconBox}>
-              <Ionicons name="mail-open-outline" size={40} color="#CBD5E1" />
+            <View style={styles.emptySquircle}>
+              <Ionicons name="mail-open-outline" size={44} color="#CBD5E1" />
             </View>
-            <Text style={styles.emptyTitle}>Nothing to see here</Text>
+            <Text style={styles.emptyTitle}>Your inbox is empty</Text>
             <Text style={styles.emptyDesc}>
-              We'll notify you when something important happens.
+              We'll notify you here when alumni interact with your posts or when
+              someone needs your expertise.
             </Text>
           </View>
         }
@@ -176,37 +194,57 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
+  headerContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    marginTop: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: "#F8FAFC",
   },
-  headerTitle: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
+  headerTextStack: { flex: 1 },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -1,
+  },
   headerSub: {
     fontSize: 14,
     color: "#64748B",
-    fontWeight: "500",
+    fontWeight: "600",
     marginTop: 2,
   },
   markAllBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    gap: 6,
+    minWidth: 110,
+    alignItems: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+      },
+      android: { elevation: 2 },
+    }),
   },
-  markAllText: { fontSize: 13, fontWeight: "700", color: COLORS.primary },
-  listPadding: { paddingHorizontal: 20, paddingBottom: 40 },
+  markAllText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  listPadding: { paddingHorizontal: 20, paddingBottom: 120 },
   card: {
     flexDirection: "row",
-    backgroundColor: "#FFF",
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 16,
     marginBottom: 12,
@@ -215,17 +253,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   unreadCard: {
-    backgroundColor: "#F0F7FF",
-    borderColor: "#BFDBFE",
-    shadowColor: "#3B82F6",
+    backgroundColor: "#FFFFFF",
+    borderColor: COLORS.primary + "20",
+    borderLeftWidth: 5,
+    borderLeftColor: COLORS.primary,
+    elevation: 3,
+    shadowColor: COLORS.primary,
     shadowOpacity: 0.05,
     shadowRadius: 10,
-    elevation: 2,
   },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+  iconSquircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
@@ -237,47 +277,74 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  title: { fontSize: 15, fontWeight: "700", color: "#334155" },
-  unreadTitle: { color: "#1E293B", fontWeight: "800" },
+  title: { fontSize: 16, fontWeight: "700", color: "#1E293B" },
+  unreadTitle: { color: "#0F172A", fontWeight: "900" },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#3B82F6",
+    backgroundColor: COLORS.primary,
   },
-  bodyText: { fontSize: 13, color: "#64748B", lineHeight: 18 },
+  bodyText: {
+    fontSize: 14,
+    color: "#64748B",
+    lineHeight: 20,
+    marginTop: 1,
+  },
   bottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 12,
+    marginTop: 14,
   },
-  timeText: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
+  timeWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  timeText: { fontSize: 12, color: "#94A3B8", fontWeight: "600" },
   viewBadge: {
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary + "08",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.primary + "15",
   },
-  viewBadgeText: { fontSize: 10, color: "#64748B", fontWeight: "700" },
-  emptyState: { alignItems: "center", marginTop: 100, paddingHorizontal: 40 },
-  emptyIconBox: {
-    width: 80,
-    height: 80,
+  viewBadgeText: {
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  emptyState: {
+    alignItems: "center",
+    marginTop: 100,
+    paddingHorizontal: 40,
+  },
+  emptySquircle: {
+    width: 110,
+    height: 110,
     borderRadius: 40,
     backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#1E293B" },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    textAlign: "center",
+  },
   emptyDesc: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#94A3B8",
     textAlign: "center",
-    marginTop: 8,
-    lineHeight: 20,
+    marginTop: 12,
+    lineHeight: 24,
   },
 });

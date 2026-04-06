@@ -9,12 +9,11 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 
-// Consistent path for global metadata (matching your Firestore screenshot)
+// Consistent path for global metadata
 const STATS_DOC_ID = "global_metrics";
 const STATS_COLLECTION = "platform_metadata";
 
@@ -27,35 +26,22 @@ export const subscribeToPlatformStats = (callback) => {
 
   return onSnapshot(
     docRef,
-    async (snapshot) => {
+    (snapshot) => {
       if (!snapshot.exists()) {
-        console.warn("Stats document missing. Initializing global_metrics...");
-
-        const initialData = {
+        // If document is missing, return zeros rather than trying to create it
+        // Creating the global_metrics doc should be an Admin-only task
+        callback({
           activeUsers: 0,
           solvedCount: 0,
           expertCount: 0,
           collabCount: 0,
-          lastUpdated: serverTimestamp(),
-        };
-
-        try {
-          // Use setDoc with {merge: true} to avoid overwriting if it was created mid-flight
-          await setDoc(docRef, initialData, { merge: true });
-          callback(initialData);
-        } catch (err) {
-          console.error(
-            "Critical: Check Firebase Rules for platform_metadata.",
-            err,
-          );
-          callback({ error: "Permission Denied" });
-        }
+        });
         return;
       }
-
       callback(snapshot.data());
     },
     (error) => {
+      // This is where the [code=permission-denied] is caught
       console.error("Stats Subscription Error:", error);
       callback({ error: error.message });
     },
@@ -64,10 +50,10 @@ export const subscribeToPlatformStats = (callback) => {
 
 /**
  * Listens to the activities collection for the live feed.
- * Returns the 6 most recent events.
  */
 export const subscribeToRecentActivity = (callback) => {
   const activityRef = collection(db, "activities");
+  // Ensure "createdAt" is indexed in Firebase Console for this query
   const q = query(activityRef, orderBy("createdAt", "desc"), limit(6));
 
   return onSnapshot(
@@ -76,7 +62,7 @@ export const subscribeToRecentActivity = (callback) => {
       const activities = snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
-        // Ensure formatTimeAgo has a valid date even during sync
+        // Handle potential null createdAt during server latency
         createdAt: d.data().createdAt?.toDate() || new Date(),
       }));
       callback(activities);
@@ -90,9 +76,6 @@ export const subscribeToRecentActivity = (callback) => {
 
 /**
  * Helper: Record a new community activity.
- * This makes the "Live Updates" section move!
- * @param {string} message - e.g., "John solved a React issue"
- * @param {string} type - 'join' | 'solved' | 'post'
  */
 export const recordActivity = async (message, type = "post") => {
   try {
@@ -108,8 +91,7 @@ export const recordActivity = async (message, type = "post") => {
 
 /**
  * Helper: Atomic Increment for global stats.
- * Call this when a user joins or a post is solved.
- * @param {string} field - 'activeUsers' | 'solvedCount' | 'expertCount' | 'collabCount'
+ * Used when a user joins, a post is created, or a problem is solved.
  */
 export const updateGlobalMetric = async (field, value = 1) => {
   const docRef = doc(db, STATS_COLLECTION, STATS_DOC_ID);
@@ -119,6 +101,7 @@ export const updateGlobalMetric = async (field, value = 1) => {
       lastUpdated: serverTimestamp(),
     });
   } catch (err) {
+    // If this fails, it's likely a rules issue with 'global_metrics' update permissions
     console.error(`Failed to increment ${field}:`, err);
   }
 };
@@ -128,6 +111,11 @@ export const updateGlobalMetric = async (field, value = 1) => {
  */
 export const getPlatformStatsOnce = async () => {
   const docRef = doc(db, STATS_COLLECTION, STATS_DOC_ID);
-  const snap = await getDoc(docRef);
-  return snap.exists() ? snap.data() : null;
+  try {
+    const snap = await getDoc(docRef);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.error("Fetch stats failed:", err);
+    return null;
+  }
 };

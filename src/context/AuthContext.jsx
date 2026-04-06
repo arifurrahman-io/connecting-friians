@@ -15,40 +15,38 @@ export function AuthProvider({ children }) {
     let unsubscribeProfile = null;
 
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
-      // 1. Set the Firebase Auth User
-      setUser(currentUser || null);
-
+      // 1. Initial State Sync
       if (currentUser) {
-        // 2. Initial Fetch for immediate UI response
+        setUser(currentUser);
+
+        // 2. Fetch Profile immediately to prevent UI lag
         try {
           const data = await getUserProfile(currentUser.uid);
           setProfile(data);
         } catch (err) {
-          // Likely a permission error because doc doesn't exist yet; we catch it silently
-          console.log("AuthContext: Initial fetch pending profile creation...");
+          console.log(
+            "AuthContext: Profile not found yet, waiting for snapshot...",
+          );
         }
 
-        // 3. DYNAMIC SYNC: Real-time listener
+        // 3. Real-time Profile Listener
         unsubscribeProfile = onSnapshot(
           doc(db, "users", currentUser.uid),
           (docSnap) => {
             if (docSnap.exists()) {
               setProfile(docSnap.data());
             }
-            // Once we have a snapshot (even if empty), we can stop the loading spinner
+            // Ensure loading is set to false only after we've attempted to get the profile
             setLoading(false);
           },
           (err) => {
-            console.warn(
-              "Profile listener error (Rules/Network):",
-              err.message,
-            );
-            // FAILSAFE: Ensure app doesn't stay on loading screen if rules block read
+            console.warn("Profile listener error:", err.message);
             setLoading(false);
           },
         );
       } else {
-        // Handle Logout
+        // Handle Logout / No User
+        setUser(null);
         setProfile(null);
         if (unsubscribeProfile) {
           unsubscribeProfile();
@@ -67,11 +65,10 @@ export function AuthProvider({ children }) {
   const refreshProfile = async () => {
     if (!auth.currentUser) return;
     try {
-      // Force reload the auth user to check for updated emailVerified status
       await auth.currentUser.reload();
-
-      // We must manually spread the properties to trigger a re-render in useMemo
       const updatedUser = auth.currentUser;
+
+      // Update local state to reflect fresh Firebase Auth data (like emailVerified)
       setUser({
         ...updatedUser,
         emailVerified: updatedUser.emailVerified,
@@ -90,13 +87,11 @@ export function AuthProvider({ children }) {
       profile,
       loading,
       refreshProfile,
-      // Status flags used by Navigation Guards
+      // Helper flags for Navigation Guards
       isAdmin: profile?.role === "admin" && user?.emailVerified === true,
       isAuthenticated: !!user && user?.emailVerified === true,
       isEmailVerified: user?.emailVerified === true,
     }),
-    // Added user?.emailVerified to the dependency array to ensure UI updates
-    // immediately when the reload() completes.
     [user, profile, loading, user?.emailVerified],
   );
 

@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Dimensions,
   RefreshControl,
+  StatusBar as RNStatusBar,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,7 +18,6 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInRight,
-  Layout,
 } from "react-native-reanimated";
 
 import AppScreen from "../../src/components/AppScreen";
@@ -43,28 +43,28 @@ export default function HomeScreen() {
       value: 0,
       icon: "people",
       color: "#6366F1",
-      target: "/directory",
+      target: "/(tabs)/directory",
     },
     {
       label: "Solved",
       value: 0,
       icon: "checkmark-done-circle",
       color: "#10B981",
-      target: "/feed",
+      target: "/(tabs)/feed",
     },
     {
       label: "Experts",
       value: 0,
       icon: "ribbon",
       color: "#F59E0B",
-      target: "/directory",
+      target: "/(tabs)/directory",
     },
     {
       label: "Efforts",
       value: 0,
       icon: "flask",
       color: "#EC4899",
-      target: "/feed",
+      target: "/(tabs)/feed",
     },
   ]);
 
@@ -73,15 +73,15 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- PERFECT GREETING LOGIC ---
-  const greetingData = useMemo(() => {
+  // --- GREETING & THEME LOGIC ---
+  const theme = useMemo(() => {
     const hour = new Date().getHours();
     const firstName = profile?.fullName || "Friend";
 
-    let text;
-    let icon;
-    let bgColors;
-    let isDark = false;
+    let text,
+      icon,
+      bgColors,
+      isDark = false;
 
     if (hour >= 5 && hour < 12) {
       text = "Good Morning";
@@ -106,11 +106,7 @@ export default function HomeScreen() {
   }, [profile?.fullName]);
 
   useEffect(() => {
-    let unsubStats = () => {};
-    let unsubActivity = () => {};
-    let unsubNotifications = () => {};
-
-    unsubStats = subscribeToPlatformStats((data) => {
+    let unsubStats = subscribeToPlatformStats((data) => {
       if (data) {
         setStats([
           {
@@ -118,38 +114,39 @@ export default function HomeScreen() {
             value: data.activeUsers || 0,
             icon: "people",
             color: "#6366F1",
-            target: "/directory",
+            target: "/(tabs)/directory",
           },
           {
             label: "Solved Issues",
             value: data.solvedCount || 0,
             icon: "checkmark-done-circle",
             color: "#10B981",
-            target: "/feed",
+            target: "/(tabs)/feed",
           },
           {
             label: "Experts",
             value: data.expertCount || 0,
             icon: "ribbon",
             color: "#F59E0B",
-            target: "/directory",
+            target: "/(tabs)/directory",
           },
           {
             label: "Efforts",
             value: data.collabCount || 0,
             icon: "flask",
             color: "#EC4899",
-            target: "/feed",
+            target: "/(tabs)/feed",
           },
         ]);
       }
       setLoading(false);
     });
 
-    unsubActivity = subscribeToRecentActivity((items) => {
+    let unsubActivity = subscribeToRecentActivity((items) => {
       setActivities((items || []).slice(0, 5));
     });
 
+    let unsubNotifications = () => {};
     if (user?.uid) {
       unsubNotifications = subscribeUnreadCount(user.uid, setUnreadCount);
     }
@@ -181,19 +178,20 @@ export default function HomeScreen() {
   };
 
   return (
-    <AppScreen backgroundColor={greetingData.isDark ? "#0F172A" : "#F8FAFC"}>
+    <AppScreen backgroundColor={theme.isDark ? "#0F172A" : "#F8FAFC"}>
+      <RNStatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.container, { paddingBottom: 20 }]}
+        contentContainerStyle={[styles.container, { paddingBottom: 40 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={greetingData.isDark ? "#FFF" : COLORS.primary}
+            tintColor={theme.isDark ? "#FFF" : COLORS.primary}
           />
         }
       >
-        {/* DYNAMIC HEADER */}
+        {/* HEADER */}
         <Animated.View
           entering={FadeInDown.duration(700)}
           style={styles.header}
@@ -201,43 +199,38 @@ export default function HomeScreen() {
           <View style={styles.greetingWrapper}>
             <View style={styles.timeLabelRow}>
               <Ionicons
-                name={greetingData.icon}
+                name={theme.icon}
                 size={14}
-                color={greetingData.isDark ? "#94A3B8" : "#64748B"}
+                color={theme.isDark ? "#94A3B8" : "#64748B"}
               />
               <Text
-                style={[
-                  styles.greeting,
-                  greetingData.isDark && { color: "#94A3B8" },
-                ]}
+                style={[styles.greeting, theme.isDark && { color: "#94A3B8" }]}
               >
-                {greetingData.text}
+                {theme.text}
               </Text>
             </View>
-            <Text
-              style={[styles.name, greetingData.isDark && { color: "#FFF" }]}
-            >
-              {greetingData.firstName}
+            <Text style={[styles.name, theme.isDark && { color: "#FFF" }]}>
+              {theme.firstName}
             </Text>
           </View>
 
           <TouchableOpacity
             style={[
               styles.iconCircle,
-              greetingData.isDark && {
+              theme.isDark && {
                 backgroundColor: "#1E293B",
                 borderColor: "#334155",
               },
             ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push("/notifications");
+              router.push("/(tabs)/notifications");
             }}
           >
             <Ionicons
               name="notifications-outline"
               size={24}
-              color={greetingData.isDark ? "#FFF" : "#1E293B"}
+              color={theme.isDark ? "#FFF" : "#1E293B"}
             />
             {unreadCount > 0 && (
               <View style={styles.badge}>
@@ -249,13 +242,13 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* STATS BENTO GRID */}
+        {/* BENTO STATS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text
               style={[
                 styles.sectionLabel,
-                greetingData.isDark && { color: "#64748B" },
+                theme.isDark && { color: "#64748B" },
               ]}
             >
               PLATFORM SNAPSHOT
@@ -279,7 +272,7 @@ export default function HomeScreen() {
                   entering={FadeInRight.delay(index * 100)}
                   style={[
                     styles.statCard,
-                    greetingData.isDark && {
+                    theme.isDark && {
                       backgroundColor: "#1E293B",
                       borderColor: "#334155",
                     },
@@ -297,7 +290,7 @@ export default function HomeScreen() {
                     <Text
                       style={[
                         styles.statValue,
-                        greetingData.isDark && { color: "#FFF" },
+                        theme.isDark && { color: "#FFF" },
                       ]}
                     >
                       {item.value}
@@ -310,13 +303,13 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ACTIVITY FEED */}
+        {/* LIVE UPDATES */}
         <View style={styles.section}>
           <View style={styles.rowBetween}>
             <Text
               style={[
                 styles.sectionLabel,
-                greetingData.isDark && { color: "#64748B" },
+                theme.isDark && { color: "#64748B" },
               ]}
             >
               LIVE UPDATES
@@ -338,7 +331,7 @@ export default function HomeScreen() {
             entering={FadeIn.delay(300)}
             style={[
               styles.activityList,
-              greetingData.isDark && {
+              theme.isDark && {
                 backgroundColor: "#1E293B",
                 borderColor: "#334155",
               },
@@ -348,15 +341,14 @@ export default function HomeScreen() {
               activities.map((act, index) => {
                 const icon = getActivityIcon(act.type);
                 return (
-                  <Animated.View
+                  <View
                     key={act.id || index}
-                    layout={Layout.springify()}
                     style={[
                       styles.activityRow,
                       index === activities.length - 1 && {
                         borderBottomWidth: 0,
                       },
-                      greetingData.isDark && { borderBottomColor: "#334155" },
+                      theme.isDark && { borderBottomColor: "#334155" },
                     ]}
                   >
                     <View
@@ -371,7 +363,7 @@ export default function HomeScreen() {
                       <Text
                         style={[
                           styles.activityText,
-                          greetingData.isDark && { color: "#CBD5E1" },
+                          theme.isDark && { color: "#CBD5E1" },
                         ]}
                         numberOfLines={2}
                       >
@@ -381,7 +373,7 @@ export default function HomeScreen() {
                         {formatTimeAgo(act.createdAt)}
                       </Text>
                     </View>
-                  </Animated.View>
+                  </View>
                 );
               })
             ) : (
@@ -395,90 +387,86 @@ export default function HomeScreen() {
           </Animated.View>
         </View>
 
-        {/* QUICK ACTION */}
-        <Animated.View entering={FadeInDown.delay(500)}>
-          <TouchableOpacity
-            style={[
-              styles.footerAction,
-              greetingData.isDark && { backgroundColor: COLORS.primary },
-            ]}
-            activeOpacity={0.9}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/create-post");
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.footerActionText}>Need support?</Text>
-              <Text
-                style={[
-                  styles.footerActionSubtext,
-                  greetingData.isDark && { color: "#FFF", opacity: 0.8 },
-                ]}
-              >
-                Experts are ready to help you.
-              </Text>
-            </View>
-            <View
+        {/* ASK EXPERTS ACTION */}
+        <TouchableOpacity
+          style={[
+            styles.footerAction,
+            theme.isDark && { backgroundColor: COLORS.primary },
+          ]}
+          activeOpacity={0.9}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/(tabs)/create-post");
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.footerActionText}>Need support?</Text>
+            <Text
               style={[
-                styles.footerButton,
-                greetingData.isDark && { backgroundColor: "#FFF" },
+                styles.footerActionSubtext,
+                theme.isDark && { color: "#FFF", opacity: 0.8 },
               ]}
             >
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  greetingData.isDark && { color: COLORS.primary },
-                ]}
-              >
-                Ask Experts
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* OPINION / FEEDBACK QUICK ACTION */}
-        <Animated.View entering={FadeInDown.delay(600)}>
-          <TouchableOpacity
-            style={styles.opinionCard}
-            activeOpacity={0.9}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/contact"); // Ensure your feedback file is named contact.jsx
-            }}
+              Experts are ready to help you.
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.footerButton,
+              theme.isDark && { backgroundColor: "#FFF" },
+            ]}
           >
-            <LinearGradient
-              colors={["#4044fc", "#2015e2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.opinionGradient}
+            <Text
+              style={[
+                styles.footerButtonText,
+                theme.isDark && { color: COLORS.primary },
+              ]}
             >
-              <View style={styles.opinionContent}>
-                <View style={styles.opinionIconCircle}>
-                  <Ionicons
-                    name="chatbubble-ellipses"
-                    size={20}
-                    color="#6366F1"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.opinionTitle}>Have an opinion?</Text>
-                  <Text style={styles.opinionSubtext}>
-                    Help us build the perfect alumni network.
-                  </Text>
-                </View>
-                <Ionicons name="arrow-forward-circle" size={32} color="#FFF" />
+              Ask Experts
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* OPINION ACTION */}
+        <TouchableOpacity
+          style={styles.opinionCard}
+          activeOpacity={0.9}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/contact");
+          }}
+        >
+          <LinearGradient
+            colors={["#4044fc", "#2015e2"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.opinionGradient}
+          >
+            <View style={styles.opinionContent}>
+              <View style={styles.opinionIconCircle}>
+                <Ionicons
+                  name="chatbubble-ellipses"
+                  size={20}
+                  color="#6366F1"
+                />
               </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.opinionTitle}>Have an opinion?</Text>
+                <Text style={styles.opinionSubtext}>
+                  Help us build the perfect alumni network.
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward-circle" size={32} color="#FFF" />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
       </ScrollView>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 10 },
+  container: { padding: 20 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -495,7 +483,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  name: { fontSize: 22, fontWeight: "900", color: "#0F172A", marginTop: -2 },
+  name: { fontSize: 24, fontWeight: "900", color: "#0F172A", marginTop: -2 },
   iconCircle: {
     width: 52,
     height: 52,
@@ -552,8 +540,8 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: "#FFF",
-    padding: 8,
-    borderRadius: 16,
+    padding: 12,
+    borderRadius: 20,
     marginBottom: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -561,26 +549,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
-  iconBox: { padding: 10, borderRadius: 16 },
+  iconBox: { padding: 10, borderRadius: 14 },
   statValue: { fontSize: 22, fontWeight: "900", color: "#1E293B" },
-  statLabel: { fontSize: 12, color: "#65696d", fontWeight: "600" },
+  statLabel: { fontSize: 12, color: "#64748B", fontWeight: "600" },
   activityList: {
     backgroundColor: "#FFF",
-    borderRadius: 30,
-    padding: 20,
+    borderRadius: 24,
+    padding: 16,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   activityRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#F8FAFC",
   },
   activityIconCircle: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
@@ -612,11 +600,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 8,
   },
   footerActionText: { color: "#FFF", fontWeight: "900", fontSize: 18 },
   footerActionSubtext: {
@@ -630,27 +613,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 16,
-    marginLeft: 10,
   },
   footerButtonText: { color: "#FFF", fontWeight: "800", fontSize: 13 },
-  opinionCard: {
-    marginTop: 16,
-    borderRadius: 24,
-    overflow: "hidden",
-    elevation: 8,
-    shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-  },
-  opinionGradient: {
-    padding: 20,
-  },
-  opinionContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 15,
-  },
+  opinionCard: { marginTop: 16, borderRadius: 24, overflow: "hidden" },
+  opinionGradient: { padding: 20 },
+  opinionContent: { flexDirection: "row", alignItems: "center", gap: 15 },
   opinionIconCircle: {
     width: 44,
     height: 44,
@@ -659,11 +626,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  opinionTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#FFF",
-  },
+  opinionTitle: { fontSize: 18, fontWeight: "900", color: "#FFF" },
   opinionSubtext: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",

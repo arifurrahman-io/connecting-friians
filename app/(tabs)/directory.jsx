@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   StyleSheet,
@@ -11,107 +12,136 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, { FadeInUp, Layout } from "react-native-reanimated";
 import AppScreen from "../../src/components/AppScreen";
+import { ExpertiseService } from "../../src/services/ExpertiseService";
 import { subscribeUsers } from "../../src/services/userService";
 import { COLORS } from "../../src/theme/colors";
 
 // --- SUB-COMPONENT: ALUMNI CARD ---
-function AlumniCard({ item, onPress }) {
+function AlumniCard({ item, masterCategories, onPress }) {
   const avatarLetter = (item.fullName || "F")[0].toUpperCase();
-  const expertiseList = Array.isArray(item.expertise)
-    ? item.expertise.slice(0, 2)
-    : [];
+
+  // Logic: Map stored IDs back to human-readable names
+  const expertiseNames = useMemo(() => {
+    if (!item.expertise || !masterCategories.length) return [];
+    return masterCategories
+      .filter((cat) => item.expertise.includes(cat.id))
+      .map((cat) => cat.name);
+  }, [item.expertise, masterCategories]);
+
+  const displayExpertise = expertiseNames.slice(0, 2);
 
   const bgColors = ["#6366F1", "#EC4899", "#8B5CF6", "#10B981", "#F59E0B"];
   const bgColor = bgColors[avatarLetter.charCodeAt(0) % bgColors.length];
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      style={styles.card}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-    >
-      <View style={styles.cardContent}>
-        <View style={[styles.avatarFrame, { backgroundColor: bgColor + "15" }]}>
-          <View style={[styles.innerAvatar, { backgroundColor: bgColor }]}>
-            <Text style={styles.avatarText}>{avatarLetter}</Text>
-          </View>
-        </View>
-
-        <View style={styles.mainInfo}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>
-              {item.fullName || "FRIIAN Member"}
-            </Text>
-            <View style={styles.batchBadge}>
-              <Text style={styles.batchText}>
-                SSC-{item.sscYear?.toString() || "—"}
-              </Text>
+    <Animated.View entering={FadeInUp} layout={Layout.springify()}>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={styles.card}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }}
+      >
+        <View style={styles.cardContent}>
+          <View
+            style={[styles.avatarFrame, { backgroundColor: bgColor + "15" }]}
+          >
+            <View style={[styles.innerAvatar, { backgroundColor: bgColor }]}>
+              <Text style={styles.avatarText}>{avatarLetter}</Text>
             </View>
           </View>
 
-          <View style={styles.detailsRow}>
-            <Ionicons name="mail-outline" size={12} color="#94A3B8" />
-            <Text style={styles.detailText} numberOfLines={1}>
-              {item.email || "Private"}
-            </Text>
-          </View>
-
-          <View style={styles.expertiseContainer}>
-            {expertiseList.map((exp, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{exp}</Text>
-              </View>
-            ))}
-            {item.expertise?.length > 2 && (
-              <Text style={styles.moreText}>
-                +{item.expertise.length - 2} more
+          <View style={styles.mainInfo}>
+            <View style={styles.nameRow}>
+              <Text style={styles.name} numberOfLines={1}>
+                {item.fullName || "FRIIAN Member"}
               </Text>
-            )}
+              <View style={styles.batchBadge}>
+                <Text style={styles.batchText}>
+                  SSC-{item.sscYear?.toString() || "—"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.detailsRow}>
+              <Ionicons name="briefcase-outline" size={12} color="#94A3B8" />
+              <Text style={styles.detailText} numberOfLines={1}>
+                {item.jobDescription || "Alumnus"}
+              </Text>
+            </View>
+
+            <View style={styles.expertiseContainer}>
+              {displayExpertise.map((name, index) => (
+                <View key={index} style={styles.tag}>
+                  <Text style={styles.tagText}>{name}</Text>
+                </View>
+              ))}
+              {expertiseNames.length > 2 && (
+                <Text style={styles.moreText}>
+                  +{expertiseNames.length - 2} more
+                </Text>
+              )}
+            </View>
           </View>
+          <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 // --- MAIN DIRECTORY SCREEN ---
 export default function DirectoryScreen() {
   const [users, setUsers] = useState([]);
+  const [masterCategories, setMasterCategories] = useState([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = subscribeUsers(setUsers);
-    return unsub;
+    // Subscribe to both Users and Categories for name mapping
+    const unsubUsers = subscribeUsers((data) => {
+      setUsers(data);
+      setLoading(false);
+    });
+
+    const unsubCats = ExpertiseService.subscribeCategories(setMasterCategories);
+
+    return () => {
+      unsubUsers();
+      unsubCats();
+    };
   }, []);
 
   const filteredUsers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    // 1. First, filter out blocked or banned users
+    // 1. Filter out blocked users
     const activeUsers = users.filter(
       (u) => u.status !== "blocked" && u.status !== "banned",
     );
 
-    // 2. Then, apply search keyword filtering
     if (!keyword) return activeUsers;
 
+    // 2. Search logic (Name, Year, or Category Name)
     return activeUsers.filter((u) => {
       const name = (u.fullName || "").toLowerCase();
-      const exp = (u.expertise || []).join(" ").toLowerCase();
       const year = String(u.sscYear || "");
 
+      // Check if keyword matches the name of any expertise IDs they possess
+      const matchesExpertise = masterCategories.some(
+        (cat) =>
+          u.expertise?.includes(cat.id) &&
+          cat.name.toLowerCase().includes(keyword),
+      );
+
       return (
-        name.includes(keyword) ||
-        exp.includes(keyword) ||
-        year.includes(keyword)
+        name.includes(keyword) || year.includes(keyword) || matchesExpertise
       );
     });
-  }, [users, search]);
+  }, [users, search, masterCategories]);
 
   return (
     <AppScreen backgroundColor="#FDFDFD">
@@ -121,6 +151,7 @@ export default function DirectoryScreen() {
             <Text style={styles.welcomeText}>Community</Text>
             <Text style={styles.titleText}>FRIIANS Directory</Text>
           </View>
+          {loading && <ActivityIndicator size="small" color={COLORS.primary} />}
         </View>
 
         <View style={styles.searchContainer}>
@@ -146,14 +177,14 @@ export default function DirectoryScreen() {
         renderItem={({ item }) => (
           <AlumniCard
             item={item}
+            masterCategories={masterCategories}
             onPress={() => router.push(`/user/${item.id}`)}
           />
         )}
         contentContainerStyle={styles.listPadding}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews={true}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={8}
         ListHeaderComponent={
           filteredUsers.length > 0 ? (
             <Text style={styles.countText}>
@@ -162,13 +193,17 @@ export default function DirectoryScreen() {
           ) : null
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyTitle}>No Members Found</Text>
-            <Text style={styles.emptySubtitle}>
-              Try adjusting your search or filters.
-            </Text>
-          </View>
+          !loading && (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBg}>
+                <Ionicons name="people-outline" size={48} color="#CBD5E1" />
+              </View>
+              <Text style={styles.emptyTitle}>No Members Found</Text>
+              <Text style={styles.emptySubtitle}>
+                Try adjusting your search or check your spelling.
+              </Text>
+            </View>
+          )
         }
       />
     </AppScreen>
@@ -177,9 +212,10 @@ export default function DirectoryScreen() {
 
 const styles = StyleSheet.create({
   fixedHeader: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 20,
     paddingTop: Platform.OS === "ios" ? 10 : 15,
     backgroundColor: "#FDFDFD",
+    paddingBottom: 10,
   },
   headerTop: {
     flexDirection: "row",
@@ -190,129 +226,136 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 11,
     color: COLORS.primary,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   titleText: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: "900",
     color: "#0F172A",
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F1F5F9",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    height: 48,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 52,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    marginBottom: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     color: "#1E293B",
-    marginLeft: 8,
+    marginLeft: 10,
+    fontWeight: "600",
   },
   listPadding: {
-    paddingHorizontal: 4,
-    paddingBottom: 40,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+    paddingTop: 10,
   },
   countText: {
     fontSize: 11,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#94A3B8",
     marginBottom: 16,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#0F172A",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+      },
+      android: { elevation: 2 },
+    }),
   },
   cardContent: {
     flexDirection: "row",
     alignItems: "center",
   },
   avatarFrame: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    padding: 3,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    padding: 4,
   },
   innerAvatar: {
     flex: 1,
-    borderRadius: 13,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
   avatarText: {
     color: "#fff",
-    fontSize: 20,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "900",
   },
   mainInfo: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: 16,
   },
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   name: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "800",
-    color: "#1E293B",
+    color: "#0F172A",
     flex: 1,
   },
   batchBadge: {
     backgroundColor: "#F8FAFC",
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   batchText: {
     fontSize: 10,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#64748B",
   },
   detailsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   detailText: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#64748B",
-    marginLeft: 4,
+    marginLeft: 5,
+    fontWeight: "500",
   },
   expertiseContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
   tag: {
-    backgroundColor: COLORS.primary + "12",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
+    backgroundColor: COLORS.primary + "08",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "15",
   },
   tagText: {
     fontSize: 10,
@@ -320,27 +363,35 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   moreText: {
-    fontSize: 10,
+    fontSize: 11,
     color: "#94A3B8",
     fontWeight: "700",
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 60,
+    marginTop: 80,
     paddingHorizontal: 40,
   },
+  emptyIconBg: {
+    width: 100,
+    height: 100,
+    borderRadius: 35,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#475569",
-    marginTop: 16,
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#1E293B",
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#94A3B8",
     textAlign: "center",
-    marginTop: 8,
-    lineHeight: 20,
+    marginTop: 10,
+    lineHeight: 22,
   },
 });

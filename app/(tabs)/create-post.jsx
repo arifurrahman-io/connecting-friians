@@ -21,7 +21,7 @@ import AppScreen from "../../src/components/AppScreen";
 import InputField from "../../src/components/InputField";
 import PrimaryButton from "../../src/components/PrimaryButton";
 import { useAuth } from "../../src/context/AuthContext";
-import { ExpertiseService } from "../../src/services/ExpertiseService"; // New Dynamic Service
+import { ExpertiseService } from "../../src/services/ExpertiseService";
 import { createPost } from "../../src/services/postService";
 import { COLORS } from "../../src/theme/colors";
 
@@ -31,7 +31,7 @@ export default function CreatePostScreen() {
   // Form States
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [selectedExpertise, setSelectedExpertise] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(null); // Now stores {id, name}
   const [loading, setLoading] = useState(false);
 
   // Dynamic Expertise States
@@ -42,12 +42,10 @@ export default function CreatePostScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Fetch Dynamic Categories from Firestore
+  // Fetch Dynamic Categories from Firestore (ID + Name)
   useEffect(() => {
     const unsub = ExpertiseService.subscribeCategories((data) => {
-      // Map Firestore objects to just names for the UI chips
-      const names = data.map((cat) => cat.name);
-      setExpertiseOptions(names);
+      setExpertiseOptions(data); // data is now [{id, name, slug}, ...]
       setCatsLoading(false);
     });
     return unsub;
@@ -55,40 +53,43 @@ export default function CreatePostScreen() {
 
   // Logic: Dynamic chip selection from Firestore data
   const visibleOptions = useMemo(() => {
+    if (expertiseOptions.length === 0) return [];
+
     const defaultSelection = expertiseOptions.slice(0, 7);
-    if (selectedExpertise && !defaultSelection.includes(selectedExpertise)) {
-      return [selectedExpertise, ...expertiseOptions.slice(0, 6)];
+    if (
+      selectedCategory &&
+      !defaultSelection.find((c) => c.id === selectedCategory.id)
+    ) {
+      return [selectedCategory, ...expertiseOptions.slice(0, 6)];
     }
     return defaultSelection;
-  }, [selectedExpertise, expertiseOptions]);
+  }, [selectedCategory, expertiseOptions]);
 
   const filteredOptions = expertiseOptions.filter((opt) =>
-    opt.toLowerCase().includes(searchQuery.toLowerCase()),
+    opt.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
-
-  const expertiseId = useMemo(() => {
-    return selectedExpertise.toLowerCase().replace(/\s+/g, "-");
-  }, [selectedExpertise]);
 
   const handleCreate = async () => {
     if (!profile?.profileCompleted) {
       Alert.alert("Action Required", "Please complete your profile first.");
       return;
     }
-    if (!title.trim() || !body.trim() || !selectedExpertise) {
+    if (!title.trim() || !body.trim() || !selectedCategory) {
       Alert.alert("Missing Info", "Please fill in all fields.");
       return;
     }
 
     try {
       setLoading(true);
+
+      // Pass the Unique ID and Name separately
       await createPost({
         authorId: user.uid,
-        authorName: profile.fullName,
-        title,
-        body,
-        primaryExpertiseName: selectedExpertise,
-        primaryExpertiseId: expertiseId,
+        authorName: profile.fullName || "FRIIAN Member",
+        title: title.trim(),
+        body: body.trim(),
+        primaryExpertiseName: selectedCategory.name,
+        primaryExpertiseId: selectedCategory.id, // THE UNIQUE DOCUMENT ID
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -96,25 +97,23 @@ export default function CreatePostScreen() {
       Toast.show({
         type: "success",
         text1: "Post Published! 🚀",
-        text2: "Your request is now live on the feed.",
+        text2: `Experts in ${selectedCategory.name} have been notified.`,
         position: "top",
-        visibilityTime: 2500,
+        visibilityTime: 3000,
       });
 
+      // Reset Form
       setTitle("");
       setBody("");
-      setSelectedExpertise("");
+      setSelectedCategory(null);
 
+      // Navigate to feed and clear the creation stack
       setTimeout(() => {
-        router.push("/feed");
+        router.replace("/(tabs)/feed");
       }, 600);
     } catch (error) {
       console.error(error);
-      Toast.show({
-        type: "error",
-        text1: "Publishing Failed",
-        text2: error.message,
-      });
+      Alert.alert("Publishing Failed", error.message);
     } finally {
       setLoading(false);
     }
@@ -141,7 +140,7 @@ export default function CreatePostScreen() {
               <View>
                 <Text style={styles.headerTitle}>New Request</Text>
                 <Text style={styles.headerSubtitle}>
-                  Seek guidance from alumni
+                  Seek guidance from the community
                 </Text>
               </View>
               <View style={styles.headerIcon}>
@@ -156,7 +155,7 @@ export default function CreatePostScreen() {
               <InputField
                 value={title}
                 onChangeText={setTitle}
-                placeholder="e.g. Need advice on BCS preparation"
+                placeholder="e.g. Need advice on career growth"
                 containerStyle={styles.noMarginInput}
                 maxLength={120}
               />
@@ -177,7 +176,7 @@ export default function CreatePostScreen() {
               <Text style={styles.charCount}>{body.length}/3000</Text>
             </View>
 
-            {/* DYNAMIC CATEGORY SELECTOR */}
+            {/* CATEGORY SELECTOR */}
             <View style={styles.expertiseSection}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.cardLabel}>Category</Text>
@@ -194,11 +193,11 @@ export default function CreatePostScreen() {
               ) : (
                 <View style={styles.chipGrid}>
                   {visibleOptions.map((item) => {
-                    const isActive = selectedExpertise === item;
+                    const isActive = selectedCategory?.id === item.id;
                     return (
                       <TouchableOpacity
-                        key={item}
-                        onPress={() => setSelectedExpertise(item)}
+                        key={item.id}
+                        onPress={() => setSelectedCategory(item)}
                         style={[
                           styles.skillChip,
                           isActive && styles.skillChipActive,
@@ -210,7 +209,7 @@ export default function CreatePostScreen() {
                             isActive && styles.skillTextActive,
                           ]}
                         >
-                          {item}
+                          {item.name}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -229,7 +228,7 @@ export default function CreatePostScreen() {
               )}
             </View>
 
-            {/* ACTION CARD */}
+            {/* ACTION FOOTER */}
             <View style={styles.publishAction}>
               <LinearGradient
                 colors={["#FFFFFF", "#F1F5F9"]}
@@ -242,11 +241,11 @@ export default function CreatePostScreen() {
                     color="#64748B"
                   />
                   <Text style={styles.infoText}>
-                    Alumni in{" "}
+                    Alumni specialized in{" "}
                     <Text style={styles.highlightText}>
-                      {selectedExpertise || "selected category"}
+                      {selectedCategory?.name || "this category"}
                     </Text>{" "}
-                    will be notified.
+                    will receive an in-app alert.
                   </Text>
                 </View>
                 <PrimaryButton
@@ -267,7 +266,12 @@ export default function CreatePostScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Category</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalVisible(false);
+                  setSearchQuery("");
+                }}
+              >
                 <Ionicons name="close-circle" size={28} color="#CBD5E1" />
               </TouchableOpacity>
             </View>
@@ -287,13 +291,14 @@ export default function CreatePostScreen() {
               <View style={styles.modalChipGrid}>
                 {filteredOptions.map((item) => (
                   <TouchableOpacity
-                    key={item}
+                    key={item.id}
                     style={[
                       styles.skillChip,
-                      selectedExpertise === item && styles.skillChipActive,
+                      selectedCategory?.id === item.id &&
+                        styles.skillChipActive,
                     ]}
                     onPress={() => {
-                      setSelectedExpertise(item);
+                      setSelectedCategory(item);
                       setModalVisible(false);
                       setSearchQuery("");
                     }}
@@ -301,10 +306,11 @@ export default function CreatePostScreen() {
                     <Text
                       style={[
                         styles.skillText,
-                        selectedExpertise === item && styles.skillTextActive,
+                        selectedCategory?.id === item.id &&
+                          styles.skillTextActive,
                       ]}
                     >
-                      {item}
+                      {item.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -313,7 +319,6 @@ export default function CreatePostScreen() {
           </View>
         </View>
       </Modal>
-      <Toast />
     </AppScreen>
   );
 }

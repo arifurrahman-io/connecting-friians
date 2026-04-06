@@ -1,4 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Picker } from "@react-native-picker/picker";
+import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
@@ -32,26 +34,22 @@ export default function ProfileScreen() {
   const [phone, setPhone] = useState("");
   const [gender, setGender] = useState("");
   const [sscYear, setSscYear] = useState("");
-  const [sscRoll, setSscRoll] = useState("");
-  const [lastEducationInstitute, setLastEducationInstitute] = useState("");
+  const [campus, setCampus] = useState("");
   const [lastEducationDepartment, setLastEducationDepartment] = useState("");
-  const [completionYear, setCompletionYear] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [bio, setBio] = useState("");
-  const [expertise, setExpertise] = useState([]);
-
-  // Dynamic Categories State
-  const [expertiseOptions, setExpertiseOptions] = useState([]);
-  const [catsLoading, setCatsLoading] = useState(true);
+  const [expertiseIds, setExpertiseIds] = useState([]);
 
   // UI States
+  const [expertiseOptions, setExpertiseOptions] = useState([]);
+  const [catsLoading, setCatsLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false); // Fixed: set to false initially
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const unsub = ExpertiseService.subscribeCategories((data) => {
-      setExpertiseOptions(data.map((cat) => cat.name));
+      setExpertiseOptions(data);
       setCatsLoading(false);
     });
     return unsub;
@@ -62,30 +60,28 @@ export default function ProfileScreen() {
       setPhone(profile.phone || "");
       setGender(profile.gender || "");
       setSscYear(profile.sscYear ? String(profile.sscYear) : "");
-      setSscRoll(profile.sscRoll ? String(profile.sscRoll) : "");
-      setLastEducationInstitute(profile.lastEducationInstitute || "");
+      setCampus(profile.campus || "");
       setLastEducationDepartment(profile.lastEducationDepartment || "");
-      setCompletionYear(
-        profile.completionYear ? String(profile.completionYear) : "",
-      );
       setJobDescription(profile.jobDescription || "");
       setBio(profile.bio || "");
-      setExpertise(profile.expertise || []);
+      setExpertiseIds(profile.expertise || []);
     }
   }, [profile]);
 
-  const toggleExpertise = (item) => {
+  const toggleExpertise = (catId) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setExpertise((prev) =>
-      prev.includes(item) ? prev.filter((e) => e !== item) : [...prev, item],
+    setExpertiseIds((prev) =>
+      prev.includes(catId)
+        ? prev.filter((id) => id !== catId)
+        : [...prev, catId],
     );
   };
 
   const handleSave = async () => {
-    if (!phone.trim() || !gender || !sscYear.trim()) {
+    if (!phone.trim() || !gender || !sscYear.trim() || !campus) {
       Alert.alert(
         "Required Fields",
-        "Please fill in Phone, Gender, and SSC Year.",
+        "Please fill in Phone, Gender, Batch, and Campus.",
       );
       return;
     }
@@ -95,18 +91,16 @@ export default function ProfileScreen() {
         phone: phone.trim(),
         gender,
         sscYear: sscYear.trim(),
-        sscRoll: sscRoll.trim(),
-        lastEducationInstitute: lastEducationInstitute.trim(),
+        campus,
         lastEducationDepartment: lastEducationDepartment.trim(),
-        completionYear: completionYear.trim(),
         jobDescription: jobDescription.trim(),
         bio: bio.trim(),
-        expertise,
+        expertise: expertiseIds,
         profileCompleted: true,
       });
       await refreshProfile();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Success 🎉", "Your profile has been saved!");
+      Alert.alert("Success 🎉", "Profile updated successfully!");
     } catch (error) {
       Alert.alert("Error", error.message);
     } finally {
@@ -115,7 +109,11 @@ export default function ProfileScreen() {
   };
 
   const filteredOptions = expertiseOptions.filter((opt) =>
-    opt.toLowerCase().includes(searchQuery.toLowerCase()),
+    opt.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const selectedExpertiseNames = expertiseOptions.filter((opt) =>
+    expertiseIds.includes(opt.id),
   );
 
   const avatarLetter = (profile?.fullName || "F")[0].toUpperCase();
@@ -131,7 +129,7 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* MODERN HEADER */}
+          {/* HEADER */}
           <View style={styles.headerContainer}>
             <LinearGradient
               colors={["#EEF2FF", "#E0E7FF"]}
@@ -151,7 +149,7 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.bodyContent}>
-            {/* CONTACT & IDENTITY */}
+            {/* PROFESSIONAL IDENTITY */}
             <View style={styles.glassCard}>
               <View style={styles.sectionHeaderRow}>
                 <View style={styles.iconCircle}>
@@ -174,7 +172,7 @@ export default function ProfileScreen() {
 
               <Text style={styles.innerLabel}>Gender Identity</Text>
               <View style={styles.genderRow}>
-                {["Male", "Female", "Other"].map((opt) => (
+                {["Male", "Female"].map((opt) => (
                   <TouchableOpacity
                     key={opt}
                     onPress={() => setGender(opt)}
@@ -196,15 +194,15 @@ export default function ProfileScreen() {
               </View>
 
               <InputField
-                label="Current Role"
+                label="Current Designation"
                 value={jobDescription}
                 onChangeText={setJobDescription}
-                placeholder="e.g. Senior Architect"
+                placeholder="e.g. Senior Software Engineer"
                 icon="briefcase-outline"
               />
             </View>
 
-            {/* ACADEMIC */}
+            {/* ACADEMIC ROOTS */}
             <View style={styles.glassCard}>
               <View style={styles.sectionHeaderRow}>
                 <View style={styles.iconCircle}>
@@ -218,7 +216,7 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.inputRow}>
-                <View style={{ flex: 1.2, marginRight: 12 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
                   <InputField
                     label="SSC Batch"
                     value={sscYear}
@@ -227,24 +225,37 @@ export default function ProfileScreen() {
                     placeholder="Year"
                   />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Roll"
-                    value={sscRoll}
-                    onChangeText={setSscRoll}
-                    placeholder="Roll No"
-                  />
+                <View style={{ flex: 1.5, marginBottom: 15 }}>
+                  <Text style={styles.label}>Campus</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={campus}
+                      onValueChange={(v) => setCampus(v)}
+                      style={styles.picker}
+                      dropdownIconColor="#0F172A"
+                    >
+                      <Picker.Item
+                        label="Select Campus"
+                        value=""
+                        color="#94A3B8"
+                      />
+                      <Picker.Item label="Banasree" value="Banasree" />
+                      <Picker.Item label="Malibag" value="Malibag" />
+                      <Picker.Item label="Mohammadpur" value="Mohammadpur" />
+                    </Picker>
+                  </View>
                 </View>
               </View>
               <InputField
-                label="Major/Department"
+                label="Highest Degree & Institute"
                 value={lastEducationDepartment}
                 onChangeText={setLastEducationDepartment}
                 icon="layers-outline"
+                placeholder="e.g. B.Sc. in CSE, DU"
               />
             </View>
 
-            {/* EXPERTISE SECTION - FIXED ROW ALIGNMENT */}
+            {/* EXPERTISE */}
             <View style={styles.glassCard}>
               <View style={styles.rowBetween}>
                 <View style={styles.sectionHeaderRowInline}>
@@ -257,7 +268,6 @@ export default function ProfileScreen() {
                   </View>
                   <Text style={styles.sectionTitle}>Expertise</Text>
                 </View>
-
                 <TouchableOpacity
                   style={styles.editBadge}
                   onPress={() => setModalVisible(true)}
@@ -274,10 +284,10 @@ export default function ProfileScreen() {
               <View style={styles.chipContainer}>
                 {catsLoading ? (
                   <ActivityIndicator size="small" color={COLORS.primary} />
-                ) : expertise.length > 0 ? (
-                  expertise.map((item) => (
-                    <View key={item} style={styles.skillChip}>
-                      <Text style={styles.skillChipText}>{item}</Text>
+                ) : selectedExpertiseNames.length > 0 ? (
+                  selectedExpertiseNames.map((item) => (
+                    <View key={item.id} style={styles.skillChip}>
+                      <Text style={styles.skillChipText}>{item.name}</Text>
                     </View>
                   ))
                 ) : (
@@ -298,28 +308,38 @@ export default function ProfileScreen() {
                     color={COLORS.primary}
                   />
                 </View>
-                <Text style={styles.sectionTitle}>Your Story</Text>
+                <Text style={styles.sectionTitle}>Describe Yourself</Text>
               </View>
               <TextInput
                 value={bio}
                 onChangeText={setBio}
                 multiline
-                placeholder="Describe your career journey..."
+                placeholder="Describe your professional journey..."
                 style={styles.bioInput}
                 placeholderTextColor="#94A3B8"
+                textAlignVertical="top"
               />
             </View>
 
+            {/* ACTIONS */}
             <View style={styles.actionSection}>
               <PrimaryButton
                 title="Save Profile"
                 onPress={handleSave}
                 loading={loading}
               />
-
               <TouchableOpacity
                 style={styles.signOutButton}
-                onPress={logoutUser}
+                onPress={() => {
+                  Alert.alert("Sign Out", "Are you sure?", [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Sign Out",
+                      style: "destructive",
+                      onPress: logoutUser,
+                    },
+                  ]);
+                }}
               >
                 <Ionicons
                   name="log-out-outline"
@@ -334,9 +354,14 @@ export default function ProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* MODAL REMAINING THE SAME */}
+      {/* CENTRAL EXPERTISE MODAL (Bottom Sheet Style) */}
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalBlur}>
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={20}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
           <View style={styles.modalSheet}>
             <View style={styles.modalIndicator} />
             <View style={styles.modalHeader}>
@@ -345,14 +370,14 @@ export default function ProfileScreen() {
                 onPress={() => setModalVisible(false)}
                 style={styles.closeCircle}
               >
-                <Ionicons name="close" size={24} color="#64748B" />
+                <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <View style={styles.searchBox}>
               <Ionicons
                 name="search"
-                size={20}
+                size={18}
                 color="#94A3B8"
                 style={{ marginLeft: 15 }}
               />
@@ -369,11 +394,11 @@ export default function ProfileScreen() {
               contentContainerStyle={styles.modalGrid}
             >
               {filteredOptions.map((item) => {
-                const isActive = expertise.includes(item);
+                const isActive = expertiseIds.includes(item.id);
                 return (
                   <TouchableOpacity
-                    key={item}
-                    onPress={() => toggleExpertise(item)}
+                    key={item.id}
+                    onPress={() => toggleExpertise(item.id)}
                     style={[
                       styles.modalItem,
                       isActive && styles.modalItemActive,
@@ -385,20 +410,26 @@ export default function ProfileScreen() {
                         isActive && styles.modalItemTextActive,
                       ]}
                     >
-                      {item}
+                      {item.name}
                     </Text>
                     {isActive && (
-                      <Ionicons name="checkmark-sharp" size={16} color="#fff" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color="#fff"
+                      />
                     )}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            <PrimaryButton
-              title="Confirm"
-              onPress={() => setModalVisible(false)}
-            />
+            <View style={styles.modalFooter}>
+              <PrimaryButton
+                title="Confirm Selection"
+                onPress={() => setModalVisible(false)}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -407,7 +438,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingBottom: 40 },
+  scrollContent: { paddingBottom: 60 },
   headerContainer: { height: 260, position: "relative" },
   headerGradient: {
     height: 180,
@@ -420,28 +451,38 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     backgroundColor: "#fff",
-    borderRadius: 24,
+    borderRadius: 28,
     padding: 24,
     alignItems: "center",
-    elevation: 10,
+    elevation: 8,
     shadowColor: "#0F172A",
     shadowOpacity: 0.1,
-    shadowRadius: 20,
+    shadowRadius: 15,
   },
   avatarContainer: { marginTop: -65, marginBottom: 12 },
   avatarSquircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
+    width: 90,
+    height: 90,
+    borderRadius: 30,
     backgroundColor: COLORS.primary,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 4,
+    borderWidth: 5,
     borderColor: "#FFF",
   },
-  avatarText: { color: "#fff", fontSize: 32, fontWeight: "900" },
-  userNameText: { fontSize: 20, fontWeight: "900", color: "#0F172A" },
-  userEmailText: { fontSize: 13, color: "#94A3B8", marginTop: 4 },
+  avatarText: { color: "#fff", fontSize: 36, fontWeight: "900" },
+  userNameText: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.5,
+  },
+  userEmailText: {
+    fontSize: 14,
+    color: "#94A3B8",
+    marginTop: 4,
+    fontWeight: "600",
+  },
   bodyContent: { paddingHorizontal: 16, marginTop: 24 },
   glassCard: {
     backgroundColor: "#fff",
@@ -456,33 +497,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  sectionHeaderRowInline: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  sectionHeaderRowInline: { flexDirection: "row", alignItems: "center" },
   iconCircle: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "#F5F8FF",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
-  sectionTitle: { fontSize: 15, fontWeight: "800", color: "#1E293B" },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: "#1E293B" },
   innerLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#94A3B8",
     marginBottom: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
-  genderRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  genderRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
   genderBtn: {
     flex: 1,
-    height: 48,
-    borderRadius: 14,
+    height: 50,
+    borderRadius: 15,
     backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
@@ -493,19 +531,34 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  genderBtnText: { fontWeight: "700", fontSize: 13, color: "#64748B" },
+  genderBtnText: { fontWeight: "800", fontSize: 13, color: "#64748B" },
   genderBtnTextActive: { color: "#fff" },
-  inputRow: { flexDirection: "row" },
+  inputRow: { flexDirection: "row", alignItems: "center" },
+  label: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#94A3B8",
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  pickerContainer: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  picker: { height: 50, width: "100%", color: "#0F172A" },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20, // Matches other sections
+    marginBottom: 20,
   },
   editBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primary + "10",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -516,16 +569,12 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginLeft: 4,
   },
-  chipContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   skillChip: {
     backgroundColor: "#F1F5F9",
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
@@ -536,13 +585,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
     padding: 16,
-    textAlignVertical: "top",
     color: "#1E293B",
     fontSize: 15,
     borderWidth: 1,
     borderColor: "#E2E8F0",
+    fontWeight: "500",
   },
-  actionSection: { marginTop: 10, gap: 12 },
+  actionSection: { marginTop: 10, gap: 12, paddingBottom: 40 },
   signOutButton: {
     flexDirection: "row",
     height: 55,
@@ -551,20 +600,19 @@ const styles = StyleSheet.create({
   },
   signOutText: {
     color: "#fa233c",
-    fontWeight: "800",
+    fontWeight: "900",
     fontSize: 14,
     textTransform: "uppercase",
+    letterSpacing: 1,
   },
-  modalBlur: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    justifyContent: "flex-end",
-  },
+
+  // MODAL STYLES
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    height: "85%",
+    height: "80%",
     padding: 24,
   },
   modalIndicator: {
@@ -583,10 +631,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 22, fontWeight: "900", color: "#1E293B" },
   closeCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F8FAFC",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -595,13 +643,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F1F5F9",
     borderRadius: 16,
-    height: 56,
+    height: 52,
     marginBottom: 20,
   },
   searchTextInput: {
     flex: 1,
     paddingHorizontal: 12,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#1E293B",
   },
@@ -609,7 +657,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    paddingBottom: 30,
+    paddingBottom: 20,
   },
   modalItem: {
     flexDirection: "row",
@@ -617,8 +665,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: "#F1F5F9",
+    borderRadius: 15,
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
@@ -626,6 +674,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  modalItemText: { fontWeight: "700", color: "#475569", fontSize: 13 },
+  modalItemText: { fontWeight: "800", color: "#64748B", fontSize: 13 },
   modalItemTextActive: { color: "#fff" },
+  modalFooter: { paddingTop: 20, borderTopWidth: 1, borderTopColor: "#F1F5F9" },
 });

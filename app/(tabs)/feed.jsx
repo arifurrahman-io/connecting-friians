@@ -15,68 +15,74 @@ import {
 } from "react-native";
 import AppScreen from "../../src/components/AppScreen";
 import PostCard from "../../src/components/PostCard";
+import { ExpertiseService } from "../../src/services/ExpertiseService";
 import { subscribePosts } from "../../src/services/postService";
 import { COLORS } from "../../src/theme/colors";
 
 export default function FeedScreen() {
   const [posts, setPosts] = useState([]);
+  const [masterCategories, setMasterCategories] = useState([]);
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeCategoryId, setActiveCategoryId] = useState("all"); // Logic moved to IDs
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = subscribePosts((data) => {
+    // 1. Subscribe to Posts
+    const unsubPosts = subscribePosts((data) => {
       setPosts(data);
       setLoading(false);
     });
-    return unsub;
+
+    // 2. Subscribe to Master Expertise Categories
+    const unsubCats = ExpertiseService.subscribeCategories((data) => {
+      setMasterCategories(data);
+    });
+
+    return () => {
+      unsubPosts();
+      unsubCats();
+    };
   }, []);
 
-  // --- DYNAMIC CATEGORIES WITH POST COUNT ---
+  // --- DYNAMIC CATEGORY TABS WITH COUNTS ---
   const dynamicCategories = useMemo(() => {
     const counts = {};
-
     posts.forEach((p) => {
-      const cat = p.primaryExpertiseName || p.category;
-      if (cat) {
-        counts[cat] = (counts[cat] || 0) + 1;
-      }
+      const id = p.primaryExpertiseId;
+      if (id) counts[id] = (counts[id] || 0) + 1;
     });
 
-    // Sort by usage count and take top 5
-    const top5Names = Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name]) => name);
+    // We only show categories that actually have posts, + "All"
+    const activeList = masterCategories
+      .filter((cat) => counts[cat.id] > 0)
+      .map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        count: counts[cat.id],
+      }))
+      .sort((a, b) => b.count - a.count);
 
-    // Structure the data for the FlatList
-    const categoriesList = [{ name: "All", count: posts.length }];
+    return [{ id: "all", name: "All", count: posts.length }, ...activeList];
+  }, [posts, masterCategories]);
 
-    top5Names.forEach((name) => {
-      categoriesList.push({ name, count: counts[name] });
-    });
-
-    return categoriesList;
-  }, [posts]);
-
+  // --- FILTERING LOGIC ---
   const filteredPosts = useMemo(() => {
     return posts.filter((p) => {
-      const titleMatch = p.title?.toLowerCase().includes(search.toLowerCase());
-      const bodyMatch = p.body?.toLowerCase().includes(search.toLowerCase());
-      const matchesSearch = titleMatch || bodyMatch;
+      const searchTerm = search.toLowerCase();
+      const matchesSearch =
+        p.title?.toLowerCase().includes(searchTerm) ||
+        p.body?.toLowerCase().includes(searchTerm);
 
       const matchesCategory =
-        activeCategory === "All" ||
-        p.primaryExpertiseName === activeCategory ||
-        p.category === activeCategory;
+        activeCategoryId === "all" || p.primaryExpertiseId === activeCategoryId;
 
       return matchesSearch && matchesCategory;
     });
-  }, [posts, search, activeCategory]);
+  }, [posts, search, activeCategoryId]);
 
-  const handleCategoryPress = (name) => {
+  const handleCategoryPress = (id) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveCategory(name);
+    setActiveCategoryId(id);
   };
 
   return (
@@ -109,7 +115,7 @@ export default function FeedScreen() {
         <View style={styles.searchBar}>
           <Ionicons name="search" size={16} color="#64748B" />
           <TextInput
-            placeholder="Search problems..."
+            placeholder="Search by keyword..."
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
@@ -128,25 +134,26 @@ export default function FeedScreen() {
         </View>
       </View>
 
-      {/* --- DYNAMIC CATEGORIES WITH COUNTS --- */}
+      {/* --- CATEGORY CHIPS --- */}
       <View style={styles.categoryContainer}>
         <FlatList
           data={dynamicCategories}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryList}
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => handleCategoryPress(item.name)}
+              onPress={() => handleCategoryPress(item.id)}
               style={[
                 styles.categoryChip,
-                activeCategory === item.name && styles.activeCategoryChip,
+                activeCategoryId === item.id && styles.activeCategoryChip,
               ]}
             >
               <Text
                 style={[
                   styles.categoryText,
-                  activeCategory === item.name && styles.activeCategoryText,
+                  activeCategoryId === item.id && styles.activeCategoryText,
                 ]}
               >
                 {item.name}
@@ -154,7 +161,7 @@ export default function FeedScreen() {
               <View
                 style={[
                   styles.countBadge,
-                  activeCategory === item.name
+                  activeCategoryId === item.id
                     ? styles.activeCountBadge
                     : styles.inactiveCountBadge,
                 ]}
@@ -162,7 +169,7 @@ export default function FeedScreen() {
                 <Text
                   style={[
                     styles.countText,
-                    activeCategory === item.name && styles.activeCountText,
+                    activeCategoryId === item.id && styles.activeCountText,
                   ]}
                 >
                   {item.count}
@@ -170,11 +177,10 @@ export default function FeedScreen() {
               </View>
             </TouchableOpacity>
           )}
-          keyExtractor={(item) => item.name}
         />
       </View>
 
-      {/* --- MAIN FEED LIST --- */}
+      {/* --- FEED --- */}
       {loading ? (
         <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
       ) : (
@@ -198,7 +204,7 @@ export default function FeedScreen() {
                 size={32}
                 color="#CBD5E1"
               />
-              <Text style={styles.emptyTitle}>No matching posts</Text>
+              <Text style={styles.emptyTitle}>No matching posts found</Text>
             </View>
           }
         />
@@ -225,104 +231,62 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
     color: "#0F172A",
     letterSpacing: -0.5,
   },
   profileCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: COLORS.primary + "12",
     justifyContent: "center",
     alignItems: "center",
   },
-  searchSection: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
+  searchSection: { paddingHorizontal: 16, marginBottom: 12 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F1F5F9",
-    height: 44,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    height: 46,
+    borderRadius: 14,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#1E293B",
-  },
-  categoryContainer: {
-    marginBottom: 8,
-  },
-  categoryList: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: "#1E293B" },
+  categoryContainer: { marginBottom: 8 },
+  categoryList: { paddingHorizontal: 16, gap: 10 },
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
     backgroundColor: "#FFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  activeCategoryChip: {
-    backgroundColor: "#0F172A",
-    borderColor: "#0F172A",
-  },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#64748B",
-  },
-  activeCategoryText: {
-    color: "#FFF",
-  },
+  activeCategoryChip: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
+  categoryText: { fontSize: 13, fontWeight: "700", color: "#64748B" },
+  activeCategoryText: { color: "#FFF" },
   countBadge: {
     marginLeft: 8,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 4,
   },
-  inactiveCountBadge: {
-    backgroundColor: "#F1F5F9",
-  },
-  activeCountBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
-  countText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#94A3B8",
-  },
-  activeCountText: {
-    color: "#FFF",
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 120,
-  },
-  cardWrapper: {
-    marginBottom: 10,
-  },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 40,
-  },
+  inactiveCountBadge: { backgroundColor: "#F1F5F9" },
+  activeCountBadge: { backgroundColor: "rgba(255,255,255,0.2)" },
+  countText: { fontSize: 10, fontWeight: "800", color: "#94A3B8" },
+  activeCountText: { color: "#FFF" },
+  listContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 120 },
+  cardWrapper: { marginBottom: 12 },
+  emptyState: { alignItems: "center", justifyContent: "center", marginTop: 60 },
   emptyTitle: {
     fontSize: 15,
     fontWeight: "700",

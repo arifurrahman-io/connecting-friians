@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -35,7 +36,7 @@ import { subscribeToFeedback } from "../../src/services/feedbackService";
 import { COLORS } from "../../src/theme/colors";
 import { formatTimeAgo } from "../../src/utils/timeAgo";
 
-// --- SUB-COMPONENT: USER ROW ---
+// --- USER ROW COMPONENT ---
 const UserManagementRow = ({ user, onToggleBlock, isProcessing }) => {
   const isBlocked = user.status === "blocked" || user.status === "banned";
   return (
@@ -79,7 +80,7 @@ const UserManagementRow = ({ user, onToggleBlock, isProcessing }) => {
   );
 };
 
-// --- SUB-COMPONENT: EXPANDABLE FEEDBACK CARD ---
+// --- FEEDBACK CARD COMPONENT ---
 const FeedbackCard = ({ item, onDelete }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -101,19 +102,17 @@ const FeedbackCard = ({ item, onDelete }) => {
           <View style={{ flex: 1 }}>
             <Text style={styles.userNameSmall}>{item.fullName}</Text>
             <Text style={styles.userEmailSmall}>
-              {item.email || "No Email Provided"}
+              {item.email || "No Email"}
             </Text>
           </View>
           <Text style={styles.timeText}>{formatTimeAgo(item.createdAt)}</Text>
         </View>
-
         <Text
           style={[styles.opinionMsg, expanded && { lineHeight: 22 }]}
           numberOfLines={expanded ? undefined : 2}
         >
           {item.message}
         </Text>
-
         {expanded && (
           <Animated.View entering={FadeInUp} style={styles.expandedFooter}>
             <View style={styles.divider} />
@@ -134,18 +133,16 @@ const FeedbackCard = ({ item, onDelete }) => {
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("reports");
 
-  // Data States
+  // Data
   const [reports, setReports] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [categories, setCategories] = useState([]);
   const [feedbacks, setFeedbacks] = useState([]);
 
-  // Category Management States
+  // Editor States
   const [newCatName, setNewCatName] = useState("");
   const [editingCatId, setEditingCatId] = useState(null);
   const [editingName, setEditingName] = useState("");
-
-  // UI States
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -165,7 +162,6 @@ export default function AdminDashboard() {
     const unsubFeedback = subscribeToFeedback(setFeedbacks);
 
     setLoading(false);
-
     return () => {
       unsubReports();
       unsubUsers();
@@ -189,11 +185,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const startEditing = (item) => {
-    setEditingCatId(item.id);
-    setEditingName(item.name);
-  };
-
   const submitEdit = async (id) => {
     if (!editingName.trim()) return;
     try {
@@ -201,50 +192,20 @@ export default function AdminDashboard() {
       await ExpertiseService.updateCategory(id, editingName.trim());
       setEditingCatId(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      Toast.show({ type: "success", text1: "Updated Skill" });
+      Toast.show({ type: "success", text1: "Skill Updated" });
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleDeleteCategory = (id, name) => {
-    Alert.alert("Remove Skill", `Delete "${name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => ExpertiseService.deleteCategory(id),
-      },
-    ]);
   };
 
   const handleToggleUserStatus = async (userId, shouldBlock) => {
     setIsProcessing(true);
     try {
       await AdminService.toggleUserBlock(userId, shouldBlock);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleDeleteFeedback = (id) => {
-    Alert.alert("Delete Opinion", "Are you sure? This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await AdminService.deleteFeedback(id);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Toast.show({ type: "success", text1: "Opinion Deleted" });
-          } catch (e) {
-            Toast.show({ type: "error", text1: "Failed to delete" });
-          }
-        },
-      },
-    ]);
   };
 
   const filteredUsers = useMemo(
@@ -292,7 +253,7 @@ export default function AdminDashboard() {
         </View>
         <View style={[styles.statBox, styles.borderLeft]}>
           <Text style={styles.statNumber}>{allUsers.length}</Text>
-          <Text style={styles.statLabel}>Total Members</Text>
+          <Text style={styles.statLabel}>Members</Text>
         </View>
         <View style={[styles.statBox, styles.borderLeft]}>
           <Text style={[styles.statNumber, { color: COLORS.primary }]}>
@@ -306,6 +267,7 @@ export default function AdminDashboard() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabScroll}
+        contentContainerStyle={{ paddingBottom: 10 }}
       >
         {[
           { id: "reports", icon: "alert-circle", label: "Reports" },
@@ -380,12 +342,11 @@ export default function AdminDashboard() {
           <FlatList
             data={feedbacks}
             keyExtractor={(item) => item.id}
-            itemLayoutAnimation={Layout.springify()}
             renderItem={({ item }) => (
               <FeedbackCard item={item} onDelete={handleDeleteFeedback} />
             )}
             ListEmptyComponent={
-              <Text style={styles.emptyText}>Waiting for user opinions...</Text>
+              <Text style={styles.emptyText}>Waiting for opinions...</Text>
             }
           />
         )}
@@ -420,7 +381,7 @@ export default function AdminDashboard() {
           <View style={{ flex: 1 }}>
             <View style={styles.addInputRow}>
               <TextInput
-                placeholder="New Skill Name..."
+                placeholder="New Skill..."
                 style={styles.categoryInput}
                 value={newCatName}
                 onChangeText={setNewCatName}
@@ -469,7 +430,10 @@ export default function AdminDashboard() {
                       <Text style={styles.categoryName}>{item.name}</Text>
                       <View style={styles.catRight}>
                         <TouchableOpacity
-                          onPress={() => startEditing(item)}
+                          onPress={() => {
+                            setEditingCatId(item.id);
+                            setEditingName(item.name);
+                          }}
                           style={styles.iconBtn}
                         >
                           <Ionicons
@@ -480,7 +444,19 @@ export default function AdminDashboard() {
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() =>
-                            handleDeleteCategory(item.id, item.name)
+                            Alert.alert(
+                              "Remove Skill",
+                              `Delete "${item.name}"?`,
+                              [
+                                { text: "Cancel" },
+                                {
+                                  text: "Delete",
+                                  style: "destructive",
+                                  onPress: () =>
+                                    ExpertiseService.deleteCategory(item.id),
+                                },
+                              ],
+                            )
                           }
                           style={styles.iconBtn}
                         >
@@ -508,7 +484,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
-    paddingTop: 50,
+    paddingTop: 60,
     paddingHorizontal: 20,
   },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -518,23 +494,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 28, fontWeight: "900", color: "#0F172A" },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -1,
+  },
   headerSub: {
     fontSize: 13,
     color: "#94A3B8",
-    fontWeight: "600",
+    fontWeight: "700",
     marginTop: -2,
   },
   headerBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primary + "10",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  headerBadgeText: { fontSize: 10, fontWeight: "800", color: COLORS.primary },
+  headerBadgeText: { fontSize: 10, fontWeight: "900", color: COLORS.primary },
   statsOverview: {
     flexDirection: "row",
     backgroundColor: "#FFF",
@@ -543,14 +524,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F1F5F9",
     marginBottom: 25,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+      },
+      android: { elevation: 2 },
+    }),
   },
   statBox: { flex: 1, alignItems: "center", justifyContent: "center" },
   borderLeft: { borderLeftWidth: 1, borderColor: "#F1F5F9" },
   statNumber: { fontSize: 18, fontWeight: "900", color: "#1E293B" },
   statLabel: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#94A3B8",
     marginTop: 2,
   },
@@ -559,8 +548,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     marginRight: 10,
     backgroundColor: "#FFF",
     borderWidth: 1,
@@ -577,7 +566,7 @@ const styles = StyleSheet.create({
   glassCard: {
     backgroundColor: "#FFF",
     borderRadius: 24,
-    padding: 16,
+    padding: 18,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#F1F5F9",
@@ -595,19 +584,29 @@ const styles = StyleSheet.create({
   },
   alertText: {
     fontSize: 10,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#EF4444",
     textTransform: "uppercase",
   },
-  timeText: { fontSize: 11, color: "#94A3B8" },
-  opinionMsg: { fontSize: 14, color: "#475569", fontWeight: "500" },
+  timeText: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
+  opinionMsg: {
+    fontSize: 14,
+    color: "#475569",
+    fontWeight: "600",
+    lineHeight: 20,
+  },
   userNameSmall: { fontSize: 14, fontWeight: "800", color: "#1E293B" },
-  userEmailSmall: { fontSize: 11, color: "#94A3B8", marginTop: 2 },
+  userEmailSmall: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 2,
+    fontWeight: "500",
+  },
   buttonRow: { flexDirection: "row", gap: 10, marginTop: 15 },
   cardBtn: {
     flex: 1,
-    height: 42,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -619,9 +618,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF",
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 15,
-    height: 48,
+    height: 50,
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#F1F5F9",
@@ -637,49 +636,54 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 18,
+    padding: 14,
+    borderRadius: 20,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   avatarMini: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarMiniText: { fontSize: 16, fontWeight: "800", color: COLORS.primary },
+  avatarMiniText: { fontSize: 18, fontWeight: "800", color: COLORS.primary },
   userInfo: { flex: 1, marginLeft: 12 },
-  userName: { fontSize: 14, fontWeight: "800", color: "#1E293B" },
-  userEmail: { fontSize: 11, color: "#94A3B8", marginTop: 2 },
+  userName: { fontSize: 15, fontWeight: "800", color: "#1E293B" },
+  userEmail: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 2,
+    fontWeight: "500",
+  },
   statusBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
     backgroundColor: "#F8FAFC",
   },
-  statusBtnText: { fontSize: 11, fontWeight: "800" },
+  statusBtnText: { fontSize: 11, fontWeight: "900" },
   addInputRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
   categoryInput: {
     flex: 1,
     backgroundColor: "#FFF",
-    height: 52,
+    height: 54,
     borderRadius: 16,
     paddingHorizontal: 18,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#1E293B",
   },
   plusBtn: {
-    width: 52,
-    height: 52,
+    width: 54,
+    height: 54,
     backgroundColor: COLORS.primary,
     borderRadius: 16,
     justifyContent: "center",
@@ -687,9 +691,9 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     backgroundColor: "#FFF",
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#F1F5F9",
@@ -699,7 +703,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  categoryName: { fontSize: 15, fontWeight: "700", color: "#1E293B" },
+  categoryName: { fontSize: 15, fontWeight: "800", color: "#1E293B" },
   catRight: { flexDirection: "row", gap: 15 },
   iconBtn: { padding: 4 },
   inlineEditRow: {
@@ -710,7 +714,7 @@ const styles = StyleSheet.create({
   inlineInput: {
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "800",
     color: COLORS.primary,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.primary,
@@ -721,26 +725,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#94A3B8",
     marginTop: 50,
-    fontWeight: "600",
+    fontWeight: "700",
+    fontSize: 14,
   },
-
-  // NEW STYLES
-  expandedCard: { borderColor: COLORS.primary, borderWidth: 1.5, elevation: 4 },
+  expandedCard: {
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+    backgroundColor: "#F5F3FF",
+  },
   expandedFooter: { marginTop: 15 },
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginBottom: 12 },
+  divider: { height: 1, backgroundColor: "#E2E8F0", marginBottom: 12 },
   deleteFeedbackBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
+    gap: 8,
+    paddingVertical: 12,
     backgroundColor: "#FFF1F2",
-    borderRadius: 12,
+    borderRadius: 14,
   },
   deleteFeedbackText: {
     color: "#EF4444",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

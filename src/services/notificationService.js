@@ -1,9 +1,9 @@
 import {
   addDoc,
-  arrayUnion,
   collection,
   doc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -14,75 +14,54 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 
-/* ------------------------------------------------
-   PUSH TOKEN MANAGEMENT
-   Used to link physical device tokens to user profiles
-   for Firebase Cloud Messaging (FCM).
------------------------------------------------- */
-
 /**
- * Saves a device's push token to the user's profile in Firestore.
- * Uses arrayUnion to support users logged into multiple devices simultaneously.
- * @param {string} uid - The unique ID of the authenticated user.
- * @param {string} token - The FCM/Expo push token from the device.
- */
-export async function saveDeviceToken(uid, token) {
-  if (!uid || !token) return;
-  try {
-    const userRef = doc(db, "users", uid);
-    await updateDoc(userRef, {
-      fcmTokens: arrayUnion(token), // Stores multiple tokens per user
-      tokenUpdatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Error saving device token:", error);
-  }
-}
-
-/* ------------------------------------------------
-   INTERNAL NOTIFICATION FEED (In-App)
-   Handles the logic for the notifications tab.
------------------------------------------------- */
-
-/**
- * Creates a notification document in the Firestore "notifications" collection.
- * This triggers the in-app feed for the receiver.
+ * Creates an in-app notification.
+ * userId: The recipient's UID
+ * senderId: The person triggering the notification
  */
 export async function createNotification({
-  receiverId,
+  userId,
   senderId,
   title,
   body,
   postId = "",
   type = "general",
 }) {
-  if (receiverId === senderId) return; // Prevent self-notifications
+  // Guard: Don't notify yourself or empty users
+  if (!userId || userId === senderId) return null;
 
   try {
-    await addDoc(collection(db, "notifications"), {
-      receiverId,
-      senderId,
-      title,
-      body,
-      postId,
+    const notifData = {
+      userId,
+      senderId: senderId || "system",
+      title: title.trim(),
+      body: body.trim(),
+      postId: String(postId), // Ensure it's a string for router.push
       type,
       isRead: false,
       createdAt: serverTimestamp(),
-    });
+    };
+
+    const docRef = await addDoc(collection(db, "notifications"), notifData);
+    return docRef.id;
   } catch (error) {
     console.error("Error creating notification:", error);
+    return null;
   }
 }
 
 /**
- * Listens for real-time updates to a user's notification list.
- * Typically used in the Notifications screen.
+ * Real-time listener for the Notifications Screen list.
  */
 export function subscribeNotifications(uid, callback) {
+  if (!uid) return () => {};
+
+  // Matches the composite index: userId (asc) + createdAt (desc)
   const q = query(
     collection(db, "notifications"),
-    where("receiverId", "==", uid),
+    where("userId", "==", uid),
     orderBy("createdAt", "desc"),
+    limit(50), // Performance optimization: only show latest 50
   );
 
   return onSnapshot(
@@ -91,40 +70,45 @@ export function subscribeNotifications(uid, callback) {
       const list = snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
-        createdAt: d.data().createdAt?.toDate() || new Date(), // Handle potential sync lag
+        // Firestore server timestamps can be null briefly during sync
+        createdAt: d.data().createdAt?.toDate() || new Date(),
       }));
       callback(list);
     },
     (error) => {
-      console.error("Notification subscription error:", error);
+      console.error("Subscription Error (Check Rules/Indexes):", error.code);
     },
   );
 }
 
 /**
- * Provides a real-time count of unread notifications.
- * Ideal for displaying a badge on the UI bell icon or tab bar.
+ * Real-time unread count for badge icons.
  */
 export function subscribeUnreadCount(uid, callback) {
+  if (!uid) return () => {};
+
   const q = query(
     collection(db, "notifications"),
-    where("receiverId", "==", uid),
+    where("userId", "==", uid),
     where("isRead", "==", false),
   );
 
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.size); // Returns the numeric count of unread docs
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      callback(snapshot.size);
+    },
+    (error) => {
+      console.error("Unread count error:", error);
+    },
+  );
 }
 
-/* ------------------------------------------------
-   NOTIFICATION STATE MANAGEMENT
------------------------------------------------- */
-
 /**
- * Marks a specific notification as read.
+ * Mark a single notification as read.
  */
 export async function markNotificationRead(notificationId) {
+  if (!notificationId) return;
   const ref = doc(db, "notifications", notificationId);
   try {
     await updateDoc(ref, {
@@ -132,31 +116,41 @@ export async function markNotificationRead(notificationId) {
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    console.error("Error marking notification as read:", error);
+    console.error("Single mark read failed:", error);
   }
 }
 
 /**
- * Marks all notifications for a specific user as read using a batch update.
- * Efficiently clears all alerts at once.
+ * Batch update to clear all unread notifications.
+ * Limits to 450 to stay safely under Firestore's 500-limit per batch.
  */
 export async function markAllNotificationsRead(uid) {
+  if (!uid) return;
+
   const q = query(
     collection(db, "notifications"),
-    where("receiverId", "==", uid),
+    where("userId", "==", uid),
     where("isRead", "==", false),
+    limit(450),
   );
 
   try {
     const snapshot = await getDocs(q);
-    const batch = writeBatch(db);
 
+    if (snapshot.empty) return true;
+
+    const batch = writeBatch(db);
     snapshot.docs.forEach((d) => {
-      batch.update(d.ref, { isRead: true, updatedAt: serverTimestamp() });
+      batch.update(d.ref, {
+        isRead: true,
+        updatedAt: serverTimestamp(),
+      });
     });
 
     await batch.commit();
+    return true;
   } catch (error) {
-    console.error("Error marking all notifications as read:", error);
+    console.error("Batch clear failed:", error);
+    throw error;
   }
 }
