@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,14 +21,12 @@ import { createReport } from "../../src/services/reportService";
 import { getUserProfile } from "../../src/services/userService";
 import { COLORS } from "../../src/theme/colors";
 
-// --- MODERN INLINE DATA ROW ---
-function InfoRow({ label, value, icon, last }) {
+// --- COMPACT DATA ROW ---
+function InfoRow({ label, value, icon }) {
   return (
-    <View style={[styles.dataRow, last && { borderBottomWidth: 0 }]}>
+    <View style={styles.dataRow}>
       <View style={styles.labelGroup}>
-        <View style={styles.iconCircle}>
-          <Ionicons name={icon} size={15} color={COLORS.primary} />
-        </View>
+        <Ionicons name={icon} size={14} color="#94A3B8" />
         <Text style={styles.rowLabel}>{label}</Text>
       </View>
       <Text style={styles.rowValue} numberOfLines={1}>
@@ -49,7 +46,6 @@ export default function PublicProfileScreen() {
   const [loadingReport, setLoadingReport] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [reportReason, setReportReason] = useState("");
-  const [reportDetails, setReportDetails] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -71,9 +67,8 @@ export default function PublicProfileScreen() {
     loadData();
   }, [id]);
 
-  // Map Expertise IDs to Names
   const expertises = useMemo(() => {
-    if (!profile?.expertise || masterCategories.length === 0) return [];
+    if (!profile?.expertise || !masterCategories.length) return [];
     return masterCategories
       .filter((cat) => profile.expertise.includes(cat.id))
       .map((cat) => cat.name);
@@ -84,7 +79,6 @@ export default function PublicProfileScreen() {
       Alert.alert("Missing Reason", "Please describe why you are reporting.");
       return;
     }
-
     try {
       setLoadingReport(true);
       await createReport({
@@ -92,11 +86,9 @@ export default function PublicProfileScreen() {
         targetId: id,
         targetOwnerId: id,
         reason: reportReason.trim(),
-        details: reportDetails.trim(),
       });
       setReportVisible(false);
       setReportReason("");
-      setReportDetails("");
       Alert.alert("Success", "Report submitted for review.");
     } catch (error) {
       Alert.alert("Error", error.message || "Failed to submit report.");
@@ -105,151 +97,135 @@ export default function PublicProfileScreen() {
     }
   };
 
-  if (loading) {
+  if (loading)
     return (
-      <AppScreen backgroundColor="#F8FAFC">
+      <AppScreen backgroundColor="#FDFDFD">
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator color={COLORS.primary} />
         </View>
       </AppScreen>
     );
-  }
 
-  if (!profile) {
-    return (
-      <AppScreen backgroundColor="#F8FAFC">
-        <View style={styles.center}>
-          <Text style={styles.emptyText}>Profile not found.</Text>
-        </View>
-      </AppScreen>
-    );
-  }
-
-  const avatarLetter = (profile.fullName || "U")[0].toUpperCase();
+  const avatarLetter = (profile?.fullName || "U")[0].toUpperCase();
   const isOwnProfile = user?.uid === id;
 
   return (
-    <AppScreen backgroundColor="#F8FAFC" edges={["bottom", "left", "right"]}>
+    <AppScreen backgroundColor="#FDFDFD">
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        bounces={false}
       >
-        {/* PREMIUM HEADER */}
-        <View style={styles.headerSection}>
+        {/* COMPACT TOP HEADER */}
+        <View style={styles.header}>
           <LinearGradient
-            colors={["#EEF2FF", "#F8FAFC"]}
-            style={styles.headerBg}
-          />
-          <View style={styles.avatarWrapper}>
-            <LinearGradient
-              colors={[COLORS.primary, "#6366F1"]}
-              style={styles.avatarSquircle}
-            >
-              <Text style={styles.avatarText}>{avatarLetter}</Text>
-            </LinearGradient>
+            colors={["#6366F1", COLORS.primary]}
+            style={styles.avatarPill}
+          >
+            <Text style={styles.avatarText}>{avatarLetter}</Text>
+          </LinearGradient>
+          <View style={styles.headerInfo}>
+            <Text style={styles.userName}>{profile.fullName || "Member"}</Text>
+            <Text style={styles.userBatch}>SSC Class of {profile.sscYear}</Text>
           </View>
-
-          <Text style={styles.userName}>{profile.fullName || "Alumnus"}</Text>
-          <Text style={styles.userEmail}>{profile.email}</Text>
-
-          {profile.jobDescription && (
-            <View style={styles.jobBadge}>
-              <Ionicons name="briefcase" size={12} color={COLORS.primary} />
-              <Text style={styles.jobBadgeText}>{profile.jobDescription}</Text>
-            </View>
-          )}
         </View>
 
-        {/* ACADEMIC ROOTS */}
-        <View style={styles.card}>
-          <Text style={styles.cardHeader}>Academic Roots</Text>
-          <InfoRow label="SSC Batch" icon="calendar" value={profile.sscYear} />
-          <InfoRow label="Campus" icon="business" value={profile.campus} />
-          <InfoRow label="Gender" icon="person" value={profile.gender} last />
+        {/* STATS STRIP */}
+        <View style={styles.statsStrip}>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>CAMPUS</Text>
+            <Text style={styles.statValue}>{profile.campus || "—"}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>GENDER</Text>
+            <Text style={styles.statValue}>{profile.gender || "—"}</Text>
+          </View>
         </View>
 
-        {/* PROFESSIONAL BACKGROUND */}
-        <View style={styles.card}>
-          <Text style={styles.cardHeader}>Professional Background</Text>
-          <InfoRow
-            label="Highest Degree"
-            icon="school"
-            value={profile.lastEducationDepartment}
-          />
-          <InfoRow
-            label="Current Role"
-            icon="briefcase-outline"
-            value={profile.jobDescription}
-            last
-          />
+        {/* INFO SECTION */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Professional info</Text>
+          <View style={styles.infoBox}>
+            <InfoRow
+              label="Current Role"
+              icon="briefcase-outline"
+              value={profile.jobDescription}
+            />
+            <InfoRow
+              label="Education"
+              icon="school-outline"
+              value={profile.lastEducationDepartment}
+            />
+            <InfoRow label="Email" icon="mail-outline" value={profile.email} />
+          </View>
         </View>
 
-        {/* EXPERTISE */}
-        <View style={styles.card}>
-          <Text style={styles.cardHeader}>Expertise & Skills</Text>
-          <View style={styles.chipGrid}>
-            {expertises.length > 0 ? (
-              expertises.map((name, i) => (
-                <View key={`exp-${i}`} style={styles.skillChip}>
-                  <Text style={styles.skillText}>{name}</Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No expertise listed</Text>
-            )}
+        {/* EXPERTISE PILLS */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Expertise</Text>
+          <View style={styles.chipRow}>
+            {expertises.map((name, i) => (
+              <View key={i} style={styles.pill}>
+                <Text style={styles.pillText}>{name}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
         {/* BIO */}
-        <View style={[styles.card, { paddingBottom: 25 }]}>
-          <Text style={styles.cardHeader}>Biography</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Biography</Text>
           <Text style={styles.bioText}>
-            {profile.bio || "No biography provided."}
+            {profile.bio || "This alumnus prefers to stay mysterious."}
           </Text>
         </View>
 
         {!isOwnProfile && (
           <TouchableOpacity
-            style={styles.reportAction}
+            style={styles.reportBtn}
             onPress={() => setReportVisible(true)}
           >
-            <Ionicons name="flag" size={14} color="#94A3B8" />
-            <Text style={styles.reportActionText}>Report this profile</Text>
+            <Ionicons name="flag-outline" size={12} color="#CBD5E1" />
+            <Text style={styles.reportBtnText}>Report Profile</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
 
-      {/* REPORT MODAL */}
-      <Modal visible={reportVisible} transparent animationType="slide">
+      {/* MODERN REPORT MODAL */}
+      <Modal visible={reportVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIndicator} />
-            <Text style={styles.modalTitle}>Report Profile</Text>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report Profile</Text>
+              <TouchableOpacity onPress={() => setReportVisible(false)}>
+                <Ionicons name="close-circle" size={24} color="#CBD5E1" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>REASON FOR REPORT</Text>
             <InputField
-              label="Reason"
+              placeholder="Describe the issue..."
               value={reportReason}
               onChangeText={setReportReason}
-              placeholder="e.g. Inappropriate content"
-            />
-            <InputField
-              label="Details"
-              value={reportDetails}
-              onChangeText={setReportDetails}
-              placeholder="Additional info..."
               multiline
+              numberOfLines={4}
+              containerStyle={styles.multilineInput}
             />
-            <PrimaryButton
-              title="Submit Report"
-              onPress={handleReport}
-              loading={loadingReport}
-            />
-            <TouchableOpacity
-              onPress={() => setReportVisible(false)}
-              style={styles.cancelBtn}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+
+            <View style={styles.modalFooter}>
+              <PrimaryButton
+                title="Submit Report"
+                onPress={handleReport}
+                loading={loadingReport}
+                style={styles.mainBtn}
+              />
+              <TouchableOpacity
+                onPress={() => setReportVisible(false)}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeBtnText}>Go Back</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -258,165 +234,145 @@ export default function PublicProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingBottom: 60 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerSection: {
+  scrollContent: { paddingBottom: 40 },
+  center: { flex: 1, justifyContent: "center" },
+  header: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingTop: 50,
-    paddingBottom: 35,
-    backgroundColor: "#fff",
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    paddingBottom: 20,
   },
-  headerBg: { ...StyleSheet.absoluteFillObject },
-  avatarWrapper: {
-    marginBottom: 15,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primary,
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        shadowOffset: { height: 6 },
-      },
-      android: { elevation: 8 },
-    }),
-  },
-  avatarSquircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 32,
+  avatarPill: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 15,
   },
-  avatarText: { fontSize: 42, fontWeight: "900", color: "#fff" },
+  avatarText: { fontSize: 28, fontWeight: "900", color: "#fff" },
+  headerInfo: { flex: 1 },
   userName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "900",
     color: "#0F172A",
     letterSpacing: -0.5,
   },
-  userEmail: {
-    fontSize: 14,
+  userBatch: {
+    fontSize: 13,
     color: "#64748B",
-    fontWeight: "500",
+    fontWeight: "600",
     marginTop: 2,
   },
-  jobBadge: {
+
+  statsStrip: {
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.primary + "10",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    marginTop: 15,
-  },
-  jobBadgeText: {
-    marginLeft: 6,
-    fontSize: 12,
-    color: COLORS.primary,
-    fontWeight: "800",
-  },
-  card: {
-    backgroundColor: "#fff",
-    marginTop: 16,
+    backgroundColor: "#F8FAFC",
     marginHorizontal: 16,
-    borderRadius: 28,
-    padding: 22,
+    borderRadius: 16,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    borderLeftWidth: 5,
-    borderLeftColor: COLORS.primary + "30",
   },
-  cardHeader: {
+  statItem: { flex: 1, alignItems: "center" },
+  statLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#94A3B8",
+    letterSpacing: 1,
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginTop: 2,
+  },
+  divider: { width: 1, height: "100%", backgroundColor: "#E2E8F0" },
+
+  section: { paddingHorizontal: 20, marginTop: 20 },
+  sectionTitle: {
     fontSize: 11,
-    fontWeight: "900",
+    fontWeight: "800",
     color: "#94A3B8",
     textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 14,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  infoBox: {
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    paddingHorizontal: 12,
   },
   dataRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F8FAFC",
   },
-  labelGroup: { flexDirection: "row", alignItems: "center" },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: "#F5F8FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
+  labelGroup: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rowLabel: { fontSize: 13, fontWeight: "600", color: "#64748B" },
+  rowValue: { fontSize: 13, fontWeight: "700", color: "#1E293B" },
+
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
   },
-  rowLabel: { fontSize: 14, fontWeight: "700", color: "#64748B" },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#1E293B",
-    flex: 1,
-    textAlign: "right",
-  },
-  chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  skillChip: {
-    backgroundColor: "#F0F4FF",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "15",
-  },
-  skillText: { color: COLORS.primary, fontWeight: "800", fontSize: 12 },
-  emptyText: { color: "#94A3B8", fontSize: 14, fontWeight: "600" },
+  pillText: { fontSize: 11, fontWeight: "700", color: COLORS.primary },
+
   bioText: {
-    fontSize: 15,
+    fontSize: 14,
     color: "#475569",
-    lineHeight: 26,
+    lineHeight: 22,
     fontWeight: "500",
   },
-  reportAction: {
+
+  reportBtn: {
     flexDirection: "row",
     alignSelf: "center",
     marginTop: 30,
     alignItems: "center",
     gap: 6,
-    padding: 12,
   },
-  reportActionText: { color: "#94A3B8", fontWeight: "700", fontSize: 13 },
+  reportBtnText: { color: "#CBD5E1", fontWeight: "700", fontSize: 12 },
+
+  /* MODAL STYLES */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    justifyContent: "flex-end",
+    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    justifyContent: "center",
+    padding: 25,
   },
-  modalCard: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 24,
-    paddingBottom: 40,
+  modalSheet: { backgroundColor: "#fff", borderRadius: 28, padding: 20 },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
   },
-  modalIndicator: {
-    width: 40,
-    height: 5,
-    backgroundColor: "#E2E8F0",
-    borderRadius: 10,
-    alignSelf: "center",
-    marginBottom: 20,
+  modalTitle: { fontSize: 18, fontWeight: "900", color: "#0F172A" },
+  modalLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#94A3B8",
+    letterSpacing: 1,
+    marginBottom: 8,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#1E293B",
-    marginBottom: 20,
+  multilineInput: {
+    minHeight: 100,
+    textAlignVertical: "top",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    paddingTop: 12,
   },
-  cancelBtn: { alignItems: "center", marginTop: 10 },
-  cancelBtnText: { color: "#64748B", fontWeight: "800", fontSize: 14 },
+  modalFooter: { marginTop: 20, gap: 10 },
+  mainBtn: { borderRadius: 14, height: 50 },
+  closeBtn: { alignItems: "center", paddingVertical: 10 },
+  closeBtnText: { color: "#94A3B8", fontWeight: "700", fontSize: 13 },
 });

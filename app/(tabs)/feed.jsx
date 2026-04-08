@@ -23,28 +23,21 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState([]);
   const [masterCategories, setMasterCategories] = useState([]);
   const [search, setSearch] = useState("");
-  const [activeCategoryId, setActiveCategoryId] = useState("all"); // Logic moved to IDs
+  const [activeCategoryId, setActiveCategoryId] = useState("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Subscribe to Posts
     const unsubPosts = subscribePosts((data) => {
       setPosts(data);
       setLoading(false);
     });
-
-    // 2. Subscribe to Master Expertise Categories
-    const unsubCats = ExpertiseService.subscribeCategories((data) => {
-      setMasterCategories(data);
-    });
-
+    const unsubCats = ExpertiseService.subscribeCategories(setMasterCategories);
     return () => {
       unsubPosts();
       unsubCats();
     };
   }, []);
 
-  // --- DYNAMIC CATEGORY TABS WITH COUNTS ---
   const dynamicCategories = useMemo(() => {
     const counts = {};
     posts.forEach((p) => {
@@ -52,7 +45,6 @@ export default function FeedScreen() {
       if (id) counts[id] = (counts[id] || 0) + 1;
     });
 
-    // We only show categories that actually have posts, + "All"
     const activeList = masterCategories
       .filter((cat) => counts[cat.id] > 0)
       .map((cat) => ({
@@ -62,20 +54,20 @@ export default function FeedScreen() {
       }))
       .sort((a, b) => b.count - a.count);
 
-    return [{ id: "all", name: "All", count: posts.length }, ...activeList];
+    return [
+      { id: "all", name: "All Topics", count: posts.length },
+      ...activeList,
+    ];
   }, [posts, masterCategories]);
 
-  // --- FILTERING LOGIC ---
   const filteredPosts = useMemo(() => {
     return posts.filter((p) => {
       const searchTerm = search.toLowerCase();
       const matchesSearch =
         p.title?.toLowerCase().includes(searchTerm) ||
         p.body?.toLowerCase().includes(searchTerm);
-
       const matchesCategory =
         activeCategoryId === "all" || p.primaryExpertiseId === activeCategoryId;
-
       return matchesSearch && matchesCategory;
     });
   }, [posts, search, activeCategoryId]);
@@ -89,100 +81,88 @@ export default function FeedScreen() {
     <AppScreen backgroundColor="#FDFDFD">
       <StatusBar barStyle="dark-content" />
 
-      {/* --- HEADER --- */}
+      {/* --- COMPACT HEADER --- */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Community</Text>
-          <Text style={styles.headerTitle}>Problem Feed</Text>
+        <View style={styles.titleStack}>
+          <Text style={styles.headerTitle}>Feed</Text>
+          <View style={styles.activeIndicator}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>{posts.length} Active</Text>
+          </View>
         </View>
         <TouchableOpacity
-          style={styles.profileCircle}
+          activeOpacity={0.7}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.push("/profile");
           }}
         >
-          <Ionicons
-            name="person-circle-outline"
-            size={26}
-            color={COLORS.primary}
-          />
+          <Ionicons name="person-circle" size={30} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* --- SEARCH --- */}
-      <View style={styles.searchSection}>
+      {/* --- SLIM SEARCH --- */}
+      <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={16} color="#64748B" />
+          <Ionicons name="search-outline" size={16} color="#94A3B8" />
           <TextInput
-            placeholder="Search by keyword..."
+            placeholder="Search discussion..."
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
             placeholderTextColor="#94A3B8"
           />
           {search.length > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                setSearch("");
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }}
-            >
+            <TouchableOpacity onPress={() => setSearch("")}>
               <Ionicons name="close-circle" size={16} color="#CBD5E1" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* --- CATEGORY CHIPS --- */}
-      <View style={styles.categoryContainer}>
+      {/* --- TIGHT HORIZONTAL CATEGORIES --- */}
+      <View style={styles.catWrapper}>
         <FlatList
           data={dynamicCategories}
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryList}
+          contentContainerStyle={styles.catList}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => handleCategoryPress(item.id)}
-              style={[
-                styles.categoryChip,
-                activeCategoryId === item.id && styles.activeCategoryChip,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  activeCategoryId === item.id && styles.activeCategoryText,
-                ]}
-              >
-                {item.name}
-              </Text>
-              <View
-                style={[
-                  styles.countBadge,
-                  activeCategoryId === item.id
-                    ? styles.activeCountBadge
-                    : styles.inactiveCountBadge,
-                ]}
+          renderItem={({ item }) => {
+            const isActive = activeCategoryId === item.id;
+            return (
+              <TouchableOpacity
+                onPress={() => handleCategoryPress(item.id)}
+                style={[styles.catChip, isActive && styles.activeCatChip]}
               >
                 <Text
-                  style={[
-                    styles.countText,
-                    activeCategoryId === item.id && styles.activeCountText,
-                  ]}
+                  style={[styles.catText, isActive && styles.activeCatText]}
                 >
-                  {item.count}
+                  {item.name}
                 </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+                <View
+                  style={[styles.countPill, isActive && styles.activeCountPill]}
+                >
+                  <Text
+                    style={[
+                      styles.countValue,
+                      isActive && styles.activeCountValue,
+                    ]}
+                  >
+                    {item.count}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
         />
       </View>
 
-      {/* --- FEED --- */}
+      {/* --- FEED LIST --- */}
       {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+        <View style={styles.centerLoader}>
+          <ActivityIndicator color={COLORS.primary} size="small" />
+        </View>
       ) : (
         <FlatList
           data={filteredPosts}
@@ -190,21 +170,15 @@ export default function FeedScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <View style={styles.cardWrapper}>
-              <PostCard
-                post={item}
-                onPress={() => router.push(`/post/${item.id}`)}
-              />
-            </View>
+            <PostCard
+              post={item}
+              onPress={() => router.push(`/post/${item.id}`)}
+            />
           )}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons
-                name="document-text-outline"
-                size={32}
-                color="#CBD5E1"
-              />
-              <Text style={styles.emptyTitle}>No matching posts found</Text>
+              <Ionicons name="leaf-outline" size={32} color="#E2E8F0" />
+              <Text style={styles.emptyText}>Nothing here yet...</Text>
             </View>
           }
         />
@@ -218,79 +192,117 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
     paddingHorizontal: 16,
-    marginBottom: 12,
+    paddingTop: Platform.OS === "ios" ? 4 : 8,
+    marginBottom: 8,
   },
-  greeting: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: COLORS.primary,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 1,
-  },
+  titleStack: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   headerTitle: {
     fontSize: 24,
     fontWeight: "900",
     color: "#0F172A",
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
   },
-  profileCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary + "12",
-    justifyContent: "center",
+  activeIndicator: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 4,
+    marginBottom: 4, // Aligns with bottom of text
   },
-  searchSection: { paddingHorizontal: 16, marginBottom: 12 },
+  onlineDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#10B981",
+  },
+  onlineText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#94A3B8",
+    textTransform: "uppercase",
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F1F5F9",
-    height: 46,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    height: 40,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    gap: 8,
   },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: "#1E293B" },
-  categoryContainer: { marginBottom: 8 },
-  categoryList: { paddingHorizontal: 16, gap: 10 },
-  categoryChip: {
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#1E293B",
+  },
+  catWrapper: {
+    marginBottom: 6,
+  },
+  catList: {
+    paddingHorizontal: 16,
+    gap: 6,
+    paddingBottom: 2,
+  },
+  catChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  activeCategoryChip: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
-  categoryText: { fontSize: 13, fontWeight: "700", color: "#64748B" },
-  activeCategoryText: { color: "#FFF" },
-  countBadge: {
-    marginLeft: 8,
-    minWidth: 20,
-    height: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 4,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
-  inactiveCountBadge: { backgroundColor: "#F1F5F9" },
-  activeCountBadge: { backgroundColor: "rgba(255,255,255,0.2)" },
-  countText: { fontSize: 10, fontWeight: "800", color: "#94A3B8" },
-  activeCountText: { color: "#FFF" },
-  listContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 120 },
-  cardWrapper: { marginBottom: 12 },
-  emptyState: { alignItems: "center", justifyContent: "center", marginTop: 60 },
-  emptyTitle: {
-    fontSize: 15,
+  activeCatChip: {
+    backgroundColor: "#0F172A",
+    borderColor: "#0F172A",
+  },
+  catText: {
+    fontSize: 12,
     fontWeight: "700",
+    color: "#64748B",
+  },
+  activeCatText: {
+    color: "#FFF",
+  },
+  countPill: {
+    marginLeft: 5,
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+  },
+  activeCountPill: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  countValue: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#64748B",
+  },
+  activeCountValue: {
+    color: "#FFF",
+  },
+  listContent: {
+    paddingTop: 4,
+    paddingBottom: 80,
+  },
+  centerLoader: {
+    marginTop: 30,
+  },
+  emptyState: {
+    alignItems: "center",
+    marginTop: 60,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: "600",
     color: "#94A3B8",
-    marginTop: 8,
   },
 });

@@ -110,14 +110,14 @@ export default function HomeScreen() {
       if (data) {
         setStats([
           {
-            label: "Active Users",
+            label: "Members",
             value: data.activeUsers || 0,
             icon: "people",
             color: "#6366F1",
             target: "/(tabs)/directory",
           },
           {
-            label: "Solved Issues",
+            label: "Solved",
             value: data.solvedCount || 0,
             icon: "checkmark-done-circle",
             color: "#10B981",

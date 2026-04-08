@@ -438,7 +438,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingBottom: 60 },
+  scrollContent: { paddingBottom: 20 },
   headerContainer: { height: 260, position: "relative" },
   headerGradient: {
     height: 180,

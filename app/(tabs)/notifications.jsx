@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 15,
     paddingVertical: 20,
     backgroundColor: "#F8FAFC",
   },
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  listPadding: { paddingHorizontal: 20, paddingBottom: 120 },
+  listPadding: { paddingHorizontal: 10, paddingBottom: 20 },
   card: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",

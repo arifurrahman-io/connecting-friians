@@ -18,11 +18,10 @@ import { ExpertiseService } from "../../src/services/ExpertiseService";
 import { subscribeUsers } from "../../src/services/userService";
 import { COLORS } from "../../src/theme/colors";
 
-// --- SUB-COMPONENT: ALUMNI CARD ---
+// --- SUB-COMPONENT: COMPACT ALUMNI CARD ---
 function AlumniCard({ item, masterCategories, onPress }) {
   const avatarLetter = (item.fullName || "F")[0].toUpperCase();
 
-  // Logic: Map stored IDs back to human-readable names
   const expertiseNames = useMemo(() => {
     if (!item.expertise || !masterCategories.length) return [];
     return masterCategories
@@ -30,13 +29,15 @@ function AlumniCard({ item, masterCategories, onPress }) {
       .map((cat) => cat.name);
   }, [item.expertise, masterCategories]);
 
-  const displayExpertise = expertiseNames.slice(0, 2);
-
+  // Modern Avatar Colors
   const bgColors = ["#6366F1", "#EC4899", "#8B5CF6", "#10B981", "#F59E0B"];
   const bgColor = bgColors[avatarLetter.charCodeAt(0) % bgColors.length];
 
   return (
-    <Animated.View entering={FadeInUp} layout={Layout.springify()}>
+    <Animated.View
+      entering={FadeInUp.duration(400)}
+      layout={Layout.springify()}
+    >
       <TouchableOpacity
         activeOpacity={0.8}
         style={styles.card}
@@ -45,49 +46,43 @@ function AlumniCard({ item, masterCategories, onPress }) {
           onPress();
         }}
       >
-        <View style={styles.cardContent}>
-          <View
-            style={[styles.avatarFrame, { backgroundColor: bgColor + "15" }]}
-          >
-            <View style={[styles.innerAvatar, { backgroundColor: bgColor }]}>
-              <Text style={styles.avatarText}>{avatarLetter}</Text>
-            </View>
-          </View>
-
-          <View style={styles.mainInfo}>
-            <View style={styles.nameRow}>
-              <Text style={styles.name} numberOfLines={1}>
-                {item.fullName || "FRIIAN Member"}
-              </Text>
-              <View style={styles.batchBadge}>
-                <Text style={styles.batchText}>
-                  SSC-{item.sscYear?.toString() || "—"}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.detailsRow}>
-              <Ionicons name="briefcase-outline" size={12} color="#94A3B8" />
-              <Text style={styles.detailText} numberOfLines={1}>
-                {item.jobDescription || "Alumnus"}
-              </Text>
-            </View>
-
-            <View style={styles.expertiseContainer}>
-              {displayExpertise.map((name, index) => (
-                <View key={index} style={styles.tag}>
-                  <Text style={styles.tagText}>{name}</Text>
-                </View>
-              ))}
-              {expertiseNames.length > 2 && (
-                <Text style={styles.moreText}>
-                  +{expertiseNames.length - 2} more
-                </Text>
-              )}
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+        {/* AVATAR SECTION */}
+        <View style={[styles.miniAvatar, { backgroundColor: bgColor }]}>
+          <Text style={styles.miniAvatarText}>{avatarLetter}</Text>
         </View>
+
+        {/* INFO SECTION */}
+        <View style={styles.infoWrapper}>
+          <View style={styles.topRow}>
+            <Text style={styles.nameText} numberOfLines={1}>
+              {item.fullName || "Member"}
+            </Text>
+
+            {/* RIGHT ALIGNED FULL BATCH */}
+            <View style={styles.batchBadge}>
+              <Text style={styles.batchBadgeText}>
+                SSC-{item.sscYear?.toString() || "—"}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.jobText} numberOfLines={1}>
+            {item.jobDescription || "FRIIAN Alumnus"}
+          </Text>
+
+          {expertiseNames.length > 0 && (
+            <Text style={styles.expertiseText} numberOfLines={1}>
+              {expertiseNames.join(" • ")}
+            </Text>
+          )}
+        </View>
+
+        <Ionicons
+          name="chevron-forward"
+          size={12}
+          color="#CBD5E1"
+          style={{ marginLeft: 4 }}
+        />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -101,14 +96,11 @@ export default function DirectoryScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Subscribe to both Users and Categories for name mapping
     const unsubUsers = subscribeUsers((data) => {
       setUsers(data);
       setLoading(false);
     });
-
     const unsubCats = ExpertiseService.subscribeCategories(setMasterCategories);
-
     return () => {
       unsubUsers();
       unsubCats();
@@ -117,26 +109,20 @@ export default function DirectoryScreen() {
 
   const filteredUsers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-
-    // 1. Filter out blocked users
     const activeUsers = users.filter(
       (u) => u.status !== "blocked" && u.status !== "banned",
     );
 
     if (!keyword) return activeUsers;
 
-    // 2. Search logic (Name, Year, or Category Name)
     return activeUsers.filter((u) => {
       const name = (u.fullName || "").toLowerCase();
       const year = String(u.sscYear || "");
-
-      // Check if keyword matches the name of any expertise IDs they possess
       const matchesExpertise = masterCategories.some(
         (cat) =>
           u.expertise?.includes(cat.id) &&
           cat.name.toLowerCase().includes(keyword),
       );
-
       return (
         name.includes(keyword) || year.includes(keyword) || matchesExpertise
       );
@@ -145,253 +131,187 @@ export default function DirectoryScreen() {
 
   return (
     <AppScreen backgroundColor="#FDFDFD">
-      <View style={styles.fixedHeader}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.welcomeText}>Community</Text>
-            <Text style={styles.titleText}>FRIIANS Directory</Text>
+      <View style={styles.compactHeader}>
+        <View style={styles.titleRow}>
+          <Text style={styles.headerTitle}>Directory</Text>
+          <View style={styles.onlinePill}>
+            <View style={styles.dot} />
+            <Text style={styles.onlineCount}>{users.length} FRIIANS</Text>
           </View>
-          {loading && <ActivityIndicator size="small" color={COLORS.primary} />}
         </View>
 
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color="#94A3B8" />
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={16} color="#94A3B8" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, year, or skill..."
+            placeholder="Search alumni, year, or skill..."
             placeholderTextColor="#94A3B8"
             value={search}
             onChangeText={setSearch}
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+              <Ionicons name="close-circle" size={16} color="#CBD5E1" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      <FlatList
-        data={filteredUsers}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <AlumniCard
-            item={item}
-            masterCategories={masterCategories}
-            onPress={() => router.push(`/user/${item.id}`)}
-          />
-        )}
-        contentContainerStyle={styles.listPadding}
-        showsVerticalScrollIndicator={false}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={8}
-        ListHeaderComponent={
-          filteredUsers.length > 0 ? (
-            <Text style={styles.countText}>
-              {filteredUsers.length} Professionals Found
-            </Text>
-          ) : null
-        }
-        ListEmptyComponent={
-          !loading && (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconBg}>
-                <Ionicons name="people-outline" size={48} color="#CBD5E1" />
-              </View>
-              <Text style={styles.emptyTitle}>No Members Found</Text>
-              <Text style={styles.emptySubtitle}>
-                Try adjusting your search or check your spelling.
-              </Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
+      ) : (
+        <FlatList
+          data={filteredUsers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <AlumniCard
+              item={item}
+              masterCategories={masterCategories}
+              onPress={() => router.push(`/user/${item.id}`)}
+            />
+          )}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No members found</Text>
             </View>
-          )
-        }
-      />
+          }
+        />
+      )}
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  fixedHeader: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 10 : 15,
-    backgroundColor: "#FDFDFD",
-    paddingBottom: 10,
+  compactHeader: {
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === "ios" ? 4 : 10,
+    marginBottom: 8,
   },
-  headerTop: {
+  titleRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 10,
   },
-  welcomeText: {
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-  },
-  titleText: {
-    fontSize: 26,
+  headerTitle: {
+    fontSize: 24,
     fontWeight: "900",
     color: "#0F172A",
     letterSpacing: -0.8,
   },
-  searchContainer: {
+  onlinePill: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F1F5F9",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#10B981",
+  },
+  onlineCount: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748B",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 40,
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: "#1E293B",
-    marginLeft: 10,
+    marginLeft: 8,
     fontWeight: "600",
   },
-  listPadding: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
-    paddingTop: 10,
-  },
-  countText: {
-    fontSize: 11,
-    fontWeight: "900",
-    color: "#94A3B8",
-    marginBottom: 16,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+  listContainer: {
+    paddingHorizontal: 5,
+    paddingBottom: 20,
+    paddingTop: 4,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.04,
-        shadowRadius: 12,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  cardContent: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  avatarFrame: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    padding: 4,
-  },
-  innerAvatar: {
-    flex: 1,
+    backgroundColor: "#f6f7ff",
     borderRadius: 16,
+    padding: 15,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  miniAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: {
+  miniAvatarText: {
     color: "#fff",
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: "900",
   },
-  mainInfo: {
+  infoWrapper: {
     flex: 1,
-    marginLeft: 16,
+    marginLeft: 12,
   },
-  nameRow: {
+  topRow: {
     flexDirection: "row",
+    justifyContent: "space-between", // Ensures right alignment of the batch
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  name: {
-    fontSize: 17,
+  nameText: {
+    fontSize: 14,
     fontWeight: "800",
     color: "#0F172A",
     flex: 1,
+    marginRight: 8,
   },
   batchBadge: {
     backgroundColor: "#F8FAFC",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  batchText: {
-    fontSize: 10,
+  batchBadgeText: {
+    fontSize: 9,
     fontWeight: "900",
     color: "#64748B",
+    letterSpacing: 0.3,
   },
-  detailsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  detailText: {
-    fontSize: 13,
-    color: "#64748B",
-    marginLeft: 5,
-    fontWeight: "500",
-  },
-  expertiseContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  tag: {
-    backgroundColor: COLORS.primary + "08",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "15",
-  },
-  tagText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.primary,
-  },
-  moreText: {
+  jobText: {
     fontSize: 11,
-    color: "#94A3B8",
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  expertiseText: {
+    fontSize: 10,
+    color: COLORS.primary,
     fontWeight: "700",
+    marginTop: 2,
   },
-  emptyContainer: {
+  emptyState: {
     alignItems: "center",
-    justifyContent: "center",
-    marginTop: 80,
-    paddingHorizontal: 40,
+    marginTop: 60,
   },
-  emptyIconBg: {
-    width: 100,
-    height: 100,
-    borderRadius: 35,
-    backgroundColor: "#F1F5F9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#1E293B",
-  },
-  emptySubtitle: {
-    fontSize: 15,
+  emptyText: {
+    fontSize: 13,
+    fontWeight: "600",
     color: "#94A3B8",
-    textAlign: "center",
-    marginTop: 10,
-    lineHeight: 22,
   },
 });

@@ -20,7 +20,7 @@ import {
 } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useAuth } from "../../src/context/AuthContext";
-import { ExpertiseService } from "../../src/services/ExpertiseService"; // Added Service
+import { ExpertiseService } from "../../src/services/ExpertiseService";
 import {
   addComment,
   buildCommentTree,
@@ -147,7 +147,7 @@ export default function PostDetailsScreen() {
   const flatListRef = useRef(null);
 
   const [post, setPost] = useState(null);
-  const [masterCategories, setMasterCategories] = useState([]); // Master List
+  const [masterCategories, setMasterCategories] = useState([]);
   const [comments, setComments] = useState([]);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
@@ -163,8 +163,7 @@ export default function PostDetailsScreen() {
       setPost(data);
     });
     const unsubComments = subscribeComments(id, setComments);
-    const unsubCats = ExpertiseService.subscribeCategories(setMasterCategories); // Subscribe to Categories
-
+    const unsubCats = ExpertiseService.subscribeCategories(setMasterCategories);
     let unsubLiked;
     if (user?.uid) unsubLiked = subscribeIsPostLiked(id, user.uid, setLiked);
 
@@ -176,7 +175,6 @@ export default function PostDetailsScreen() {
     };
   }, [id, user?.uid]);
 
-  // DYNAMIC UI LOGIC: Resolve Category Name from ID
   const dynamicCategoryName = useMemo(() => {
     if (!post) return "...";
     const match = masterCategories.find(
@@ -252,12 +250,14 @@ export default function PostDetailsScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+        // Offset for Header height + Safe area
+        keyboardVerticalOffset={Platform.OS === "ios" ? 110 : 0}
       >
         <FlatList
           ref={flatListRef}
           data={threadedComments}
           keyExtractor={(item) => item.id}
+          // Remove huge paddingBottom since composer is now in the flow
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
@@ -377,7 +377,7 @@ export default function PostDetailsScreen() {
           }
         />
 
-        {/* INPUT COMPOSER */}
+        {/* INPUT COMPOSER - Pushed up by KeyboardAvoidingView */}
         {post.solved ? (
           <View style={styles.solvedFooter}>
             <BlurView intensity={80} tint="light" style={styles.solvedBlur}>
@@ -416,6 +416,9 @@ export default function PostDetailsScreen() {
                 onChangeText={setComment}
                 multiline
                 maxLength={1000}
+                onFocus={() =>
+                  setTimeout(() => flatListRef.current?.scrollToEnd(), 200)
+                }
               />
               <TouchableOpacity
                 style={[styles.sendBtn, !comment.trim() && { opacity: 0.4 }]}
@@ -472,7 +475,7 @@ export default function PostDetailsScreen() {
 const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: "#FFFFFF" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { paddingBottom: 150 },
+  listContent: { paddingBottom: 24 }, // Smaller padding needed now
   headerSection: { padding: 24, paddingBottom: 0 },
   metaRow: {
     flexDirection: "row",
@@ -606,16 +609,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   replyActionText: { fontSize: 13, fontWeight: "900", color: COLORS.primary },
+
   composerContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
     backgroundColor: "#FFFFFFFA",
+    // Remove position: absolute to allow flex flow with KeyboardAvoidingView
   },
   replyBanner: {
     flexDirection: "row",
@@ -652,13 +653,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 12,
   },
-  solvedFooter: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-  },
+
+  solvedFooter: { padding: 20, paddingBottom: Platform.OS === "ios" ? 40 : 20 },
   solvedBlur: {
     flexDirection: "row",
     alignItems: "center",
@@ -675,6 +671,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginLeft: 8,
   },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.4)",

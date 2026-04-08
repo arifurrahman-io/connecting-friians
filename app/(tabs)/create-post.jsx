@@ -356,10 +356,6 @@ const styles = StyleSheet.create({
   },
   formContainer: { paddingHorizontal: 16, marginTop: 20 },
   sectionCard: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   cardLabel: {
